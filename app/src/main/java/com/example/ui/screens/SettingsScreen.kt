@@ -996,15 +996,27 @@ fun CloudSyncStatusContent(
                             .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
                             .padding(10.dp)
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(
-                                text = "How to Publish to Google Play Store:",
+                                text = "Option 1 — Share Free Right Now (No Play Store Fee):",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF34D399)
+                            )
+                            Text(
+                                text = "• Click the 'Share' button in the top-right bar of AI Studio, set access to Public, and send the link ($publicInviteUrl) to friends.",
+                                fontSize = 11.sp,
+                                color = Color(0xFFCBD5E1),
+                                lineHeight = 16.sp
+                            )
+                            Text(
+                                text = "Option 2 — Why Google Play Console Blocked Login & How to Get AAB:",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color(0xFFFDE047)
                             )
                             Text(
-                                text = "1. Open the Settings (gear) menu in the top-right of AI Studio.\n2. Select Export AAB (Android App Bundle) for Google Play Console or Export APK for direct Android install.\n3. Upload the exported .aab file to Google Play Console -> Production / Open Testing track.",
+                                text = "• Google Play Console (play.google.com/console/signup) requires registering a Google Play Developer Account first (Google charges a one-time $25 registration fee).\n• To get the AAB/APK: use the Download / Export icon in the top bar of AI Studio to download the APK/AAB or Export Project as ZIP (open in Android Studio -> Build -> Generate Signed App Bundle / APK).",
                                 fontSize = 11.sp,
                                 color = Color(0xFFCBD5E1),
                                 lineHeight = 16.sp
