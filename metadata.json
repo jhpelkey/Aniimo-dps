@@ -1,0 +1,6 @@
+{
+  "name": "Aniimo DPS",
+  "description": "Aniimo damage meta guide, best skills, partner synergies, gear loadouts, and community speedrun clear time leaderboard with video proof.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

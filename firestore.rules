@@ -1,0 +1,252 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny all unspecified routes
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // 1. TEAMS COLLECTION
+    function isValidTeam(data) {
+      return data.userId is string && data.userId.size() > 0 && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.tag is string && data.tag.size() > 0 && data.tag.size() <= 50 &&
+             (!('authorName' in data) || (data.authorName is string && data.authorName.size() <= 100)) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 1000)) &&
+             data.memberIds is list && data.memberIds.size() <= 4 &&
+             (data.memberIds.size() == 0 || data.memberIds[0] is string) &&
+             data.membersJson is string && data.membersJson.size() <= 20000 &&
+             (!('isPublic' in data) || data.isPublic is bool) &&
+             (!('upvotes' in data) || data.upvotes is int);
+    }
+
+    match /teams/{teamId} {
+      allow get: if isSignedIn() && (existing().isPublic == true || existing().userId == request.auth.uid);
+      allow list: if isSignedIn() && (resource.data.isPublic == true || resource.data.userId == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(teamId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'name', 'tag', 'memberIds', 'membersJson', 'createdAt', 'updatedAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidTeam(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(teamId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidTeam(incoming()) &&
+                       (
+                         // Owner updating team content
+                         (existing().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'tag', 'authorName', 'description', 'memberIds', 'membersJson', 'isPublic', 'updatedAt', 'upvotes'])) ||
+                         // Community upvoting a public team
+                         (existing().isPublic == true && incoming().diff(existing()).affectedKeys().hasOnly(['upvotes', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(teamId) && existing().userId == request.auth.uid;
+    }
+
+    // 2. DISCUSSION POSTS COLLECTION
+    function isValidDiscussionPost(data) {
+      return data.authorUid is string && data.authorUid.size() > 0 && data.authorUid.size() <= 128 &&
+             data.authorName is string && data.authorName.size() > 0 && data.authorName.size() <= 100 &&
+             (!('aniimoId' in data) || (data.aniimoId is string && data.aniimoId.size() <= 64)) &&
+             (!('aniimoName' in data) || (data.aniimoName is string && data.aniimoName.size() <= 100)) &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+             data.body is string && data.body.size() > 0 && data.body.size() <= 10000 &&
+             data.tag is string && data.tag.size() > 0 && data.tag.size() <= 50 &&
+             data.upvotes is int &&
+             data.commentsCount is int;
+    }
+
+    match /posts/{postId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       isValidId(postId) &&
+                       incoming().authorUid == request.auth.uid &&
+                       incoming().keys().hasAll(['authorUid', 'authorName', 'title', 'body', 'tag', 'upvotes', 'commentsCount', 'createdAt', 'updatedAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidDiscussionPost(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(postId) &&
+                       incoming().authorUid == existing().authorUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidDiscussionPost(incoming()) &&
+                       (
+                         // Author updating content
+                         (existing().authorUid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'body', 'tag', 'aniimoId', 'aniimoName', 'updatedAt', 'upvotes', 'commentsCount'])) ||
+                         // Community voting or incrementing comment count
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['upvotes', 'commentsCount', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(postId) && existing().authorUid == request.auth.uid;
+
+      // Subcollection: comments
+      function isValidComment(data) {
+        return data.authorUid is string && data.authorUid.size() > 0 && data.authorUid.size() <= 128 &&
+               data.authorName is string && data.authorName.size() > 0 && data.authorName.size() <= 100 &&
+               data.content is string && data.content.size() > 0 && data.content.size() <= 2000;
+      }
+
+      match /comments/{commentId} {
+        allow get: if isSignedIn();
+        allow list: if isSignedIn();
+
+        allow create: if isSignedIn() &&
+                         isValidId(commentId) &&
+                         incoming().authorUid == request.auth.uid &&
+                         incoming().keys().hasAll(['authorUid', 'authorName', 'content', 'createdAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         isValidComment(incoming());
+
+        allow update: if isSignedIn() &&
+                         isValidId(commentId) &&
+                         existing().authorUid == request.auth.uid &&
+                         incoming().authorUid == existing().authorUid &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidComment(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['content']);
+
+        allow delete: if isSignedIn() && isValidId(commentId) && existing().authorUid == request.auth.uid;
+      }
+    }
+
+    // 3. LEADERBOARD ENTRIES COLLECTION
+    function isValidLeaderboardEntry(data) {
+      return data.submitterUid is string && data.submitterUid.size() > 0 && data.submitterUid.size() <= 128 &&
+             data.runnerName is string && data.runnerName.size() > 0 && data.runnerName.size() <= 100 &&
+             data.dungeonName is string && data.dungeonName.size() > 0 && data.dungeonName.size() <= 100 &&
+             data.teamName is string && data.teamName.size() > 0 && data.teamName.size() <= 100 &&
+             data.aniimoIds is list && data.aniimoIds.size() <= 4 &&
+             (data.aniimoIds.size() == 0 || data.aniimoIds[0] is string) &&
+             data.clearTimeSeconds is int && data.clearTimeSeconds >= 1 &&
+             data.clearTimeFormatted is string && data.clearTimeFormatted.size() <= 32 &&
+             data.videoUrl is string && data.videoUrl.size() > 0 && data.videoUrl.size() <= 1000 &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+             data.legitVotes is int &&
+             data.notLegitVotes is int &&
+             data.isVerified is bool;
+    }
+
+    match /leaderboard_entries/{entryId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       isValidId(entryId) &&
+                       incoming().submitterUid == request.auth.uid &&
+                       incoming().keys().hasAll(['submitterUid', 'runnerName', 'dungeonName', 'teamName', 'aniimoIds', 'clearTimeSeconds', 'clearTimeFormatted', 'videoUrl', 'legitVotes', 'notLegitVotes', 'isVerified', 'createdAt', 'updatedAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidLeaderboardEntry(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(entryId) &&
+                       incoming().submitterUid == existing().submitterUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidLeaderboardEntry(incoming()) &&
+                       (
+                         // Submitter updating details
+                         (existing().submitterUid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['runnerName', 'teamName', 'notes', 'videoUrl', 'updatedAt'])) ||
+                         // Community voting on legitimacy (adjusting votes and verified status)
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['legitVotes', 'notLegitVotes', 'isVerified', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(entryId) && existing().submitterUid == request.auth.uid;
+
+      // Subcollection: votes
+      function isValidVote(data) {
+        return data.voterUid is string && data.voterUid == request.auth.uid &&
+               data.isLegit is bool &&
+               (!('reason' in data) || (data.reason is string && data.reason.size() <= 500));
+      }
+
+      match /votes/{voterUid} {
+        allow get: if isSignedIn();
+        allow list: if isSignedIn();
+
+        allow create: if isSignedIn() &&
+                         voterUid == request.auth.uid &&
+                         incoming().voterUid == request.auth.uid &&
+                         incoming().keys().hasAll(['voterUid', 'isLegit', 'createdAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         isValidVote(incoming());
+
+        allow update: if isSignedIn() &&
+                         voterUid == request.auth.uid &&
+                         existing().voterUid == request.auth.uid &&
+                         incoming().voterUid == request.auth.uid &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidVote(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['isLegit', 'reason']);
+
+        allow delete: if isSignedIn() && voterUid == request.auth.uid && existing().voterUid == request.auth.uid;
+      }
+    }
+
+    // 4. LIVE PATCH NOTES & BALANCES COLLECTION
+    function isValidPatchNote(data) {
+      return data.version is string && data.version.size() > 0 && data.version.size() <= 32 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+             (!('releaseDate' in data) || (data.releaseDate is string && data.releaseDate.size() <= 50)) &&
+             (!('sourceUrl' in data) || (data.sourceUrl is string && data.sourceUrl.size() <= 1000)) &&
+             data.summary is string && data.summary.size() <= 5000 &&
+             data.skillChangesJson is string && data.skillChangesJson.size() <= 50000 &&
+             data.statChangesJson is string && data.statChangesJson.size() <= 50000 &&
+             data.newAniimoJson is string && data.newAniimoJson.size() <= 50000 &&
+             data.syncedByUid is string && data.syncedByUid.size() <= 128;
+    }
+
+    match /patches/{patchId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       isValidId(patchId) &&
+                       incoming().syncedByUid == request.auth.uid &&
+                       incoming().keys().hasAll(['version', 'title', 'summary', 'skillChangesJson', 'statChangesJson', 'newAniimoJson', 'syncedByUid', 'createdAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       isValidPatchNote(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(patchId) &&
+                       existing().syncedByUid == request.auth.uid &&
+                       incoming().syncedByUid == existing().syncedByUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidPatchNote(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['title', 'summary', 'releaseDate', 'sourceUrl', 'skillChangesJson', 'statChangesJson', 'newAniimoJson']);
+
+      allow delete: if isSignedIn() && isValidId(patchId) && existing().syncedByUid == request.auth.uid;
+    }
+  }
+}
