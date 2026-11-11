@@ -17,6 +17,7 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
@@ -41,6 +42,7 @@ class AniimoFirestoreRepository(
             .map { snapshot ->
                 snapshot.toObjects(FirestoreTeam::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
             }
+            .catch { emit(emptyList()) }
     }
 
     fun observeUserTeams(userId: String): Flow<List<FirestoreTeam>> {
@@ -50,6 +52,7 @@ class AniimoFirestoreRepository(
             .map { snapshot ->
                 snapshot.toObjects(FirestoreTeam::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
             }
+            .catch { emit(emptyList()) }
     }
 
     suspend fun saveTeam(team: FirestoreTeam): Result<String> {
@@ -120,6 +123,7 @@ class AniimoFirestoreRepository(
             .map { snapshot ->
                 snapshot.toObjects(FirestoreDiscussionPost::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
             }
+            .catch { emit(emptyList()) }
     }
 
     suspend fun createDiscussionPost(post: FirestoreDiscussionPost): Result<String> {
@@ -174,6 +178,7 @@ class AniimoFirestoreRepository(
             .map { snapshot ->
                 snapshot.toObjects(FirestorePostComment::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
             }
+            .catch { emit(emptyList()) }
     }
 
     suspend fun addComment(postId: String, comment: FirestorePostComment): Result<String> {
@@ -214,6 +219,7 @@ class AniimoFirestoreRepository(
             .map { snapshot ->
                 snapshot.toObjects(FirestoreLeaderboardEntry::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
             }
+            .catch { emit(emptyList()) }
     }
 
     suspend fun submitLeaderboardEntry(entry: FirestoreLeaderboardEntry): Result<String> {
@@ -293,6 +299,7 @@ class AniimoFirestoreRepository(
             .map { snapshot ->
                 snapshot.toObjects(FirestoreLivePatchNote::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
             }
+            .catch { emit(emptyList()) }
     }
 
     suspend fun publishPatchNote(patch: FirestoreLivePatchNote): Result<String> {

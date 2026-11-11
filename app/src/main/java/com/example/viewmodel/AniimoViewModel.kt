@@ -10,16 +10,24 @@ import com.example.data.model.CustomBuild
 import com.example.data.model.Element
 import com.example.data.model.LeaderboardEntry
 import com.example.data.repository.AniimoRepository
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
+import java.util.concurrent.ConcurrentHashMap
 
 enum class LeaderboardSort(val label: String) {
     FASTEST_TIME("Fastest Clear"),
@@ -29,11 +37,30 @@ enum class LeaderboardSort(val label: String) {
 
 data class UiMessage(val text: String, val isError: Boolean = false)
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AniimoViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: AniimoRepository
     private val firestoreRepository: com.example.data.repository.AniimoFirestoreRepository
     private val patchNotesService: com.example.data.service.AniimoPatchNotesService
+
+    private val cloudEntryDocIds = ConcurrentHashMap<Long, String>()
+    private val cloudPostDocIds = ConcurrentHashMap<Int, String>()
+
+    private val authUidFlow: Flow<String?> = callbackFlow {
+        val auth = try { Firebase.auth } catch (_: Exception) { null }
+        if (auth == null) {
+            trySend(null)
+            close()
+            return@callbackFlow
+        }
+        trySend(auth.currentUser?.uid)
+        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            trySend(firebaseAuth.currentUser?.uid)
+        }
+        auth.addAuthStateListener(listener)
+        awaitClose { auth.removeAuthStateListener(listener) }
+    }.distinctUntilChanged().catch { emit(null) }
 
     // Live Patch Balances & Releases State
     val cloudPatchNotes: StateFlow<List<com.example.data.model.FirestoreLivePatchNote>>
@@ -52,7 +79,8 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
         firestoreRepository = com.example.data.repository.AniimoFirestoreRepository(application)
         patchNotesService = com.example.data.service.AniimoPatchNotesService()
 
-        cloudPatchNotes = firestoreRepository.observePatchNotes()
+        cloudPatchNotes = authUidFlow
+            .flatMapLatest { firestoreRepository.observePatchNotes() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
         viewModelScope.launch {
@@ -169,9 +197,74 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
     private val _selectedTeamAniimoFilter = MutableStateFlow<String?>(null)
     val selectedTeamAniimoFilter: StateFlow<String?> = _selectedTeamAniimoFilter.asStateFlow()
 
-    val allTopRatedTeams: StateFlow<List<com.example.data.model.TopRatedTeam>> =
-        repository.getAllTopRatedTeams()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val cloudTeamsFlow: Flow<List<com.example.data.model.FirestoreTeam>> =
+        authUidFlow.flatMapLatest { firestoreRepository.observePublicTeams() }
+
+    val allTopRatedTeams: StateFlow<List<com.example.data.model.TopRatedTeam>> = combine(
+        repository.getAllTopRatedTeams(),
+        cloudTeamsFlow
+    ) { localTeams, cloudTeams ->
+        val mappedCloud = cloudTeams.mapNotNull { fsTeam ->
+            val resolvedIds = fsTeam.memberIds.ifEmpty { listOf("fulmintis", "dazmand", "bailite", "stellarys") }
+            val resolvedAniimos = (0..3).map { idx ->
+                val targetId = resolvedIds.getOrNull(idx) ?: ""
+                repository.aniimos.find { it.id.equals(targetId, ignoreCase = true) }
+                    ?: repository.aniimos.getOrElse(idx) { repository.aniimos.first() }
+            }
+            val primary = resolvedAniimos.first()
+            val mode = com.example.data.model.TeamMode.entries.find {
+                it.displayName.equals(fsTeam.tag, ignoreCase = true) || it.id.equals(fsTeam.tag, ignoreCase = true)
+            } ?: com.example.data.model.TeamMode.DPS
+            val defaultRoles = listOf(
+                "Slot 1 • Main Burst Carry",
+                "Slot 2 • Partner Synergy",
+                "Slot 3 • Armor Break / Support",
+                "Slot 4 • Flex / Sustain"
+            )
+            val members = resolvedAniimos.mapIndexed { index, aniimo ->
+                com.example.data.model.TeamMemberBuild(
+                    aniimoId = aniimo.id,
+                    aniimoName = aniimo.name,
+                    role = defaultRoles.getOrElse(index) { "Squad Member" },
+                    element = aniimo.element,
+                    heldItem = aniimo.bestItems.firstOrNull()?.name ?: "Pendant (+15 Contracted)",
+                    heldItemEffect = aniimo.bestItems.firstOrNull()?.coreEffect ?: "Signature Held Item",
+                    awakeningOrder = "ATK > BREAK > REGEN"
+                )
+            }
+            com.example.data.model.TopRatedTeam(
+                id = fsTeam.id.ifBlank { "cloud_team_${fsTeam.name.hashCode()}" },
+                title = fsTeam.name.ifBlank { "${primary.name} Public Squad" },
+                mode = mode,
+                primaryAniimoId = primary.id,
+                primaryAniimoName = primary.name,
+                members = members,
+                capabilities = listOf(
+                    com.example.data.model.CapabilityPerk("ATK", "1st Priority", "Max Attack Awakening", 10),
+                    com.example.data.model.CapabilityPerk("BREAK", "2nd Priority", "Boss Stagger Shred", 6),
+                    com.example.data.model.CapabilityPerk("REGEN", "3rd Priority", "Energy Rotation Uptime", 4)
+                ),
+                pointInvestmentOrder = emptyList(),
+                strategyGuide = fsTeam.description.ifBlank { "Shared public 4-Aniimo team build synced via Cloud." },
+                estimatedDpsOrWinRate = "Cloud Public Build",
+                author = fsTeam.authorName.ifBlank { "Community Builder" },
+                upvotes = fsTeam.upvotes.coerceAtLeast(1),
+                hasUserUpvoted = false,
+                isUserCreated = true
+            )
+        }
+        val merged = localTeams.toMutableList()
+        for (cloudTeam in mappedCloud) {
+            val duplicate = merged.any {
+                it.id == cloudTeam.id ||
+                    (it.title.equals(cloudTeam.title, ignoreCase = true) && it.author.equals(cloudTeam.author, ignoreCase = true))
+            }
+            if (!duplicate) {
+                merged.add(0, cloudTeam)
+            }
+        }
+        merged
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val filteredTopRatedTeams: StateFlow<List<com.example.data.model.TopRatedTeam>> = combine(
         allTopRatedTeams,
@@ -411,7 +504,115 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
     private val _showOnlyLegitEntries = MutableStateFlow(false)
     val showOnlyLegitEntries: StateFlow<Boolean> = _showOnlyLegitEntries.asStateFlow()
 
-    private val rawEntries: Flow<List<LeaderboardEntry>> = repository.getAllLeaderboardEntries()
+    private val cloudLeaderboardFlow: Flow<List<com.example.data.model.FirestoreLeaderboardEntry>> =
+        authUidFlow.flatMapLatest { firestoreRepository.observeLeaderboardEntries() }
+
+    private val rawEntries: Flow<List<LeaderboardEntry>> = combine(
+        repository.getAllLeaderboardEntries(),
+        cloudLeaderboardFlow
+    ) { localEntries, cloudEntries ->
+        val mappedCloud = cloudEntries.map { fsEntry ->
+            val syntheticId = ((fsEntry.id.hashCode().toLong() and 0x7FFFFFFFL) + 100_000L)
+            if (fsEntry.id.isNotBlank()) {
+                cloudEntryDocIds[syntheticId] = fsEntry.id
+            }
+            val boss = repository.bossEncounters.find {
+                it.name.equals(fsEntry.dungeonName, ignoreCase = true) ||
+                    it.id.equals(fsEntry.dungeonName, ignoreCase = true)
+            } ?: repository.bossEncounters.first()
+
+            val ids = fsEntry.aniimoIds
+            val main = repository.aniimos.find { it.id.equals(ids.getOrNull(0), ignoreCase = true) }
+                ?: repository.aniimos.first()
+            val partner = repository.aniimos.find { it.id.equals(ids.getOrNull(1), ignoreCase = true) }
+                ?: repository.aniimos.getOrElse(1) { main }
+            val slot3 = repository.aniimos.find { it.id.equals(ids.getOrNull(2), ignoreCase = true) }
+                ?: repository.aniimos.getOrElse(2) { main }
+            val slot4 = repository.aniimos.find { it.id.equals(ids.getOrNull(3), ignoreCase = true) }
+                ?: repository.aniimos.getOrElse(3) { partner }
+
+            val clearMillis = (fsEntry.clearTimeSeconds.coerceAtLeast(1) * 1000L)
+            val urlLower = fsEntry.videoUrl.lowercase()
+            val platform = when {
+                urlLower.contains("youtube.com") || urlLower.contains("youtu.be") -> "YouTube"
+                urlLower.contains("twitch.tv") -> "Twitch"
+                urlLower.contains("bilibili.com") -> "Bilibili"
+                else -> "Video Proof"
+            }
+
+            LeaderboardEntry(
+                id = syntheticId,
+                bossId = boss.id,
+                bossName = boss.name,
+                runnerName = fsEntry.runnerName.ifBlank { "Speedrunner" },
+                mainAniimoId = main.id,
+                mainAniimoName = main.name,
+                mainAniimoElement = main.element,
+                partnerAniimoId = partner.id,
+                partnerAniimoName = partner.name,
+                partnerAniimoElement = partner.element,
+                slot3AniimoId = slot3.id,
+                slot3AniimoName = slot3.name,
+                slot3AniimoElement = slot3.element,
+                slot4AniimoId = slot4.id,
+                slot4AniimoName = slot4.name,
+                slot4AniimoElement = slot4.element,
+                clearTimeMillis = clearMillis,
+                clearTimeDisplay = fsEntry.clearTimeFormatted.ifBlank {
+                    val mins = fsEntry.clearTimeSeconds / 60
+                    val secs = fsEntry.clearTimeSeconds % 60
+                    String.format("%02d:%02d.00", mins, secs)
+                },
+                videoProofUrl = fsEntry.videoUrl,
+                videoPlatform = platform,
+                weaponEquipped = main.bestItems.firstOrNull()?.name ?: "Pendant (+15 Contracted)",
+                relicSetEquipped = "Partner: ${partner.bestItems.firstOrNull()?.name ?: "Capacitous Battery (+15)"} • ATK > BREAK > REGEN",
+                estimatedDpsOutput = main.maxOptimizedDps,
+                submittedDate = "Cloud Live",
+                isVerified = fsEntry.isVerified || fsEntry.legitVotes > fsEntry.notLegitVotes,
+                upvotes = fsEntry.legitVotes.coerceAtLeast(1),
+                hasUserUpvoted = false,
+                isUserSubmission = fsEntry.submitterUid == (try { Firebase.auth.currentUser?.uid } catch (_: Exception) { null }),
+                runnerNotes = fsEntry.notes.ifBlank { "4-Aniimo squad speedrun synced from Cloud Leaderboard." },
+                legitVotes = fsEntry.legitVotes,
+                notLegitVotes = fsEntry.notLegitVotes,
+                userLegitVote = null,
+                videoDurationSeconds = (fsEntry.clearTimeSeconds + 10).coerceAtLeast(15)
+            )
+        }
+
+        val merged = localEntries.map { local ->
+            val matchingCloud = mappedCloud.find { cloud ->
+                cloud.runnerName.equals(local.runnerName, ignoreCase = true) &&
+                    cloud.clearTimeDisplay == local.clearTimeDisplay &&
+                    cloud.bossId == local.bossId
+            }
+            if (matchingCloud != null) {
+                cloudEntryDocIds[local.id]?.let { } ?: run {
+                    cloudEntryDocIds[matchingCloud.id]?.let { docId -> cloudEntryDocIds[local.id] = docId }
+                }
+                local.copy(
+                    legitVotes = maxOf(local.legitVotes, matchingCloud.legitVotes),
+                    notLegitVotes = maxOf(local.notLegitVotes, matchingCloud.notLegitVotes),
+                    isVerified = maxOf(local.legitVotes, matchingCloud.legitVotes) > maxOf(local.notLegitVotes, matchingCloud.notLegitVotes)
+                )
+            } else {
+                local
+            }
+        }.toMutableList()
+
+        for (cloud in mappedCloud) {
+            val exists = merged.any { local ->
+                local.runnerName.equals(cloud.runnerName, ignoreCase = true) &&
+                    local.clearTimeDisplay == cloud.clearTimeDisplay &&
+                    local.bossId == cloud.bossId
+            }
+            if (!exists) {
+                merged.add(cloud)
+            }
+        }
+        merged
+    }
 
     val leaderboardEntries: StateFlow<List<LeaderboardEntry>> = combine(
         rawEntries,
@@ -754,6 +955,18 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
     fun voteLeaderboardLegitimacy(entry: LeaderboardEntry, voteLegit: Boolean) {
         viewModelScope.launch {
             repository.voteLeaderboardLegitimacy(entry.id, voteLegit)
+            try {
+                val docId = cloudEntryDocIds[entry.id]
+                val voterUid = Firebase.auth.currentUser?.uid
+                if (!docId.isNullOrBlank() && !voterUid.isNullOrBlank()) {
+                    firestoreRepository.castLegitVote(
+                        entryId = docId,
+                        voterUid = voterUid,
+                        isLegit = voteLegit,
+                        reason = if (voteLegit) "Verified by community member" else "Flagged by community member"
+                    )
+                }
+            } catch (_: Exception) {}
             // Keep active proof dialog in sync if open
             if (_activeProofEntry.value?.id == entry.id) {
                 val newLegit = if (voteLegit) entry.legitVotes + 1 else if (entry.userLegitVote == "LEGIT") (entry.legitVotes - 1).coerceAtLeast(0) else entry.legitVotes
@@ -1060,9 +1273,92 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
     private val _discussionSearchQuery = MutableStateFlow("")
     val discussionSearchQuery: StateFlow<String> = _discussionSearchQuery.asStateFlow()
 
-    val allDiscussionPosts: StateFlow<List<com.example.data.model.DiscussionPost>> =
-        repository.getAllDiscussionPosts()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val cloudDiscussionFlow: Flow<List<com.example.data.model.FirestoreDiscussionPost>> =
+        authUidFlow.flatMapLatest { firestoreRepository.observeDiscussionPosts() }
+
+    val allDiscussionPosts: StateFlow<List<com.example.data.model.DiscussionPost>> = combine(
+        repository.getAllDiscussionPosts(),
+        cloudDiscussionFlow
+    ) { localPosts, cloudPosts ->
+        val heldRegex = Regex("""\[Held Item:\s*([^\]]*)\]""")
+        val awakeRegex = Regex("""\[Awakening:\s*([^\]]*)\]""")
+        val mediaUrlRegex = Regex("""\[MediaUrl:\s*([^\]]*)\]""")
+        val mediaTypeRegex = Regex("""\[MediaType:\s*([^\]]*)\]""")
+
+        val mappedCloud = cloudPosts.map { fsPost ->
+            val syntheticId = ((fsPost.id.hashCode() and 0x7FFFFFFF) % 900_000) + 100_000
+            if (fsPost.id.isNotBlank()) {
+                cloudPostDocIds[syntheticId] = fsPost.id
+            }
+            val matchedAniimo = repository.aniimos.find {
+                it.id.equals(fsPost.aniimoId, ignoreCase = true) ||
+                    it.name.equals(fsPost.aniimoName, ignoreCase = true)
+            }
+            val parsedHeld = heldRegex.find(fsPost.body)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+            val parsedAwake = awakeRegex.find(fsPost.body)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+            val parsedMediaUrl = fsPost.mediaUrl.ifBlank {
+                mediaUrlRegex.find(fsPost.body)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+            }
+            val parsedMediaType = fsPost.mediaType.ifBlank {
+                mediaTypeRegex.find(fsPost.body)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+            }
+            val cleanBody = fsPost.body
+                .replace(heldRegex, "")
+                .replace(awakeRegex, "")
+                .replace(mediaUrlRegex, "")
+                .replace(mediaTypeRegex, "")
+                .trim()
+
+            val category = com.example.data.model.DiscussionCategory.values().find {
+                it.displayName.equals(fsPost.tag, ignoreCase = true) ||
+                    it.id.equals(fsPost.tag, ignoreCase = true)
+            } ?: com.example.data.model.DiscussionCategory.BUILD_IDEA
+
+            com.example.data.model.DiscussionPost(
+                id = syntheticId,
+                aniimoId = fsPost.aniimoId.ifBlank { matchedAniimo?.id ?: "fulmintis" },
+                aniimoName = fsPost.aniimoName.ifBlank { matchedAniimo?.name ?: "Fulmintis" },
+                aniimoElement = matchedAniimo?.element ?: Element.LIGHTNING,
+                authorName = fsPost.authorName.ifBlank { "Community Explorer" },
+                authorBadge = if (category == com.example.data.model.DiscussionCategory.PRISMANA_SHOWCASE) "Prismana Architect" else "Community Member",
+                category = category,
+                title = fsPost.title,
+                content = cleanBody.ifBlank { fsPost.body },
+                recommendedHeldItem = parsedHeld,
+                recommendedAwakening = parsedAwake,
+                mediaUrl = parsedMediaUrl,
+                mediaType = parsedMediaType,
+                upvotes = fsPost.upvotes.coerceAtLeast(1),
+                hasUserUpvoted = false,
+                timestamp = "Cloud Live",
+                replies = emptyList()
+            )
+        }
+
+        val merged = localPosts.map { local ->
+            val matchingCloud = mappedCloud.find { cloud ->
+                cloud.title.equals(local.title, ignoreCase = true) &&
+                    cloud.authorName.equals(local.authorName, ignoreCase = true)
+            }
+            if (matchingCloud != null) {
+                cloudPostDocIds[matchingCloud.id]?.let { docId -> cloudPostDocIds[local.id] = docId }
+                local.copy(upvotes = maxOf(local.upvotes, matchingCloud.upvotes))
+            } else {
+                local
+            }
+        }.toMutableList()
+
+        for (cloud in mappedCloud) {
+            val exists = merged.any { local ->
+                local.title.equals(cloud.title, ignoreCase = true) &&
+                    local.authorName.equals(cloud.authorName, ignoreCase = true)
+            }
+            if (!exists) {
+                merged.add(0, cloud)
+            }
+        }
+        merged
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val filteredDiscussionPosts: StateFlow<List<com.example.data.model.DiscussionPost>> = combine(
         allDiscussionPosts,
@@ -1153,6 +1449,13 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
             repository.addDiscussionPost(newPost)
             try {
                 val userUid = Firebase.auth.currentUser?.uid ?: "user_${authorName.lowercase().replace(" ", "_")}"
+                val encodedBody = buildString {
+                    append(newPost.content)
+                    append("\n\n[Held Item: ${newPost.recommendedHeldItem}] [Awakening: ${newPost.recommendedAwakening}]")
+                    if (newPost.mediaUrl.isNotBlank()) {
+                        append(" [MediaUrl: ${newPost.mediaUrl}] [MediaType: ${newPost.mediaType}]")
+                    }
+                }.take(3950)
                 firestoreRepository.createDiscussionPost(
                     com.example.data.model.FirestoreDiscussionPost(
                         authorUid = userUid,
@@ -1160,7 +1463,7 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
                         aniimoId = newPost.aniimoId,
                         aniimoName = newPost.aniimoName,
                         title = newPost.title,
-                        body = "${newPost.content}\n\n[Held Item: ${newPost.recommendedHeldItem}] [Awakening: ${newPost.recommendedAwakening}]",
+                        body = encodedBody,
                         tag = newPost.category.displayName,
                         mediaUrl = newPost.mediaUrl,
                         mediaType = newPost.mediaType,
@@ -1175,6 +1478,13 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
     fun toggleDiscussionUpvote(postId: Int) {
         viewModelScope.launch {
             repository.toggleDiscussionUpvote(postId)
+            try {
+                val docId = cloudPostDocIds[postId]
+                val currentPost = allDiscussionPosts.value.find { it.id == postId }
+                if (!docId.isNullOrBlank() && currentPost != null) {
+                    firestoreRepository.upvoteDiscussionPost(docId, currentPost.upvotes)
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -1185,6 +1495,20 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
         }
         viewModelScope.launch {
             repository.addDiscussionReply(postId, authorName, replyContent)
+            try {
+                val docId = cloudPostDocIds[postId]
+                val uid = Firebase.auth.currentUser?.uid
+                if (!docId.isNullOrBlank() && !uid.isNullOrBlank()) {
+                    firestoreRepository.addComment(
+                        postId = docId,
+                        comment = com.example.data.model.FirestorePostComment(
+                            authorUid = uid,
+                            authorName = authorName.ifBlank { Firebase.auth.currentUser?.displayName ?: "Community Member" },
+                            content = replyContent.trim()
+                        )
+                    )
+                }
+            } catch (_: Exception) {}
             _userMessage.value = UiMessage("Reply added to discussion!")
         }
     }
