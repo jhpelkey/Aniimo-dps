@@ -21,19 +21,19 @@ jobs:
 
       - name: Verify Pre-Built APK Integrity
         run: |
-          ls -lh dist/Aniimo-DPS-v1.0.apk
-          unzip -t dist/Aniimo-DPS-v1.0.apk | head -n 20
+          ls -lh Aniimo-DPS-v1.0.apk
+          unzip -t Aniimo-DPS-v1.0.apk | head -n 20
 
       - name: Publish Installable APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0
-          name: "Aniimo DPS v1.0 — Official Android APK Installer (34.3 MB)"
+          name: "Aniimo DPS v1.0 — Official Android APK Installer"
           body: |
             ## 📲 Direct Android Phone Installation
-            Tap **`Aniimo-DPS-v1.0.apk`** (34.3 MB) under **Assets** below to download and install **Aniimo DPS** on your Android phone or tablet.
+            Tap **`Aniimo-DPS-v1.0.apk`** under **Assets** below to download and install **Aniimo DPS** on your Android phone or tablet.
           files: |
-            dist/Aniimo-DPS-v1.0.apk
+            Aniimo-DPS-v1.0.apk
           draft: false
           prerelease: false
         env:
