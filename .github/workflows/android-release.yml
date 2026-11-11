@@ -1,0 +1,117 @@
+name: Build & Publish Android APK Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build Signed APK & Publish GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK Licenses & Install SDK 36 / 36.1
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0" || true
+
+      - name: Restore Debug Keystore & Prepare Release Signing Keystore
+        run: |
+          if [ -f "debug.keystore.base64" ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          else
+            keytool -genkeypair -v \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+          if [ ! -f "my-upload-key.jks" ]; then
+            keytool -genkeypair -v \
+              -keystore my-upload-key.jks \
+              -storepass aniimorelease123 \
+              -alias upload \
+              -keypass aniimorelease123 \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Aniimo DPS Community,O=AniimoDPS,C=US"
+          fi
+
+          if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+            cp .env.example .env
+          fi
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Build Installable APK & Play Store AAB
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+          STORE_PASSWORD: aniimorelease123
+          KEY_PASSWORD: aniimorelease123
+        run: |
+          gradle assembleDebug assembleRelease bundleRelease --no-daemon
+
+      - name: Prepare Release Files
+        run: |
+          mkdir -p release-dist
+          cp app/build/outputs/apk/release/app-release.apk release-dist/Aniimo-DPS-v1.0.apk
+          cp app/build/outputs/apk/debug/app-debug.apk release-dist/Aniimo-DPS-v1.0-debug.apk
+          cp app/build/outputs/bundle/release/app-release.aab release-dist/Aniimo-DPS-v1.0.aab
+
+      - name: Upload APK & AAB Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Aniimo-DPS-Android-Installers
+          path: |
+            release-dist/Aniimo-DPS-v1.0.apk
+            release-dist/Aniimo-DPS-v1.0-debug.apk
+            release-dist/Aniimo-DPS-v1.0.aab
+
+      - name: Publish Installable APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: "Aniimo DPS v1.0 — Public Community Android Installer (.APK)"
+          body: |
+            ##📲 Install Aniimo DPS on Android
+            1. On your Android phone or tablet, download **`Aniimo-DPS-v1.0.apk`** under **Assets** below.
+            2. Tap the downloaded `.apk` file to install (if prompted by Android, allow installation from your browser).
+            3. Open **Aniimo DPS** and sign in or share 4-Aniimo builds, Leaderboard speedruns, and Discussion Board posts!
+
+            ### Included Files
+            - **`Aniimo-DPS-v1.0.apk`** — Signed Release APK for direct installation on any Android device.
+            - **`Aniimo-DPS-v1.0.aab`** — Signed Android App Bundle (`.aab`) for Google Play Console upload.
+          files: |
+            release-dist/Aniimo-DPS-v1.0.apk
+            release-dist/Aniimo-DPS-v1.0.aab
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
