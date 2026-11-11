@@ -1,16 +1,18 @@
 # Aniimo DPS — Public Community Companion App
 
-## 📲 [👉 CLICK HERE TO DOWNLOAD & INSTALL `Aniimo-DPS-v1.0.apk` FOR ANDROID](../../releases/latest/download/Aniimo-DPS-v1.0.apk)
+## 📲 Direct Android APK Download (34.3 MB)
+
+Tap either link below on your Android phone to download the real, signed **`Aniimo-DPS-v1.0.apk`** (34.3 MB):
+
+1. ### 👉 [**Download `Aniimo-DPS-v1.0.apk` Directly (Instant Raw Binary — 34.3 MB)**](../../raw/HEAD/dist/Aniimo-DPS-v1.0.apk)
+2. ### 📦 [**Download `Aniimo-DPS-v1.0.apk` from GitHub Releases**](../../releases/latest/download/Aniimo-DPS-v1.0.apk)
 
 ---
 
-### Why Did It Say "Not a Valid APK"? (Quick Fix)
-Android shows **"Not a valid APK"** or **"Problem parsing the package"** in 3 situations on GitHub:
-1. **Downloading from the `Actions` tab instead of `Releases`**: Files downloaded from the GitHub **Actions** tab are wrapped inside a **`.zip` archive** (`Aniimo-DPS-Android-Installers.zip`). Android cannot install a `.zip` file directly unless you unzip/extract it first.
-2. **Tapping `.aab` instead of `.apk`**: `.aab` files are only for the Google Play Console—Android phones only install **`.apk`** files.
-3. **Long-pressing "Download link" on a GitHub code page**: Doing that downloads a tiny HTML web page (~100 KB) instead of the 45 MB `.apk` binary.
+### ⚠️ Why Did You See "Invalid package / The APK file is corrupted"?
+Previously, the GitHub Actions workflow hadn't finished creating the Release yet, so tapping the download link downloaded a tiny **GitHub 404 HTML webpage (~9 KB)** named `Aniimo-DPS-v1.0.apk` instead of the real app. When Android tries to install a 9 KB webpage, it says *"Invalid package — The APK file is corrupted"*.
 
-### ✅ How to Install Properly on Android
-1. Tap the direct download link at the top of this page: **[Download `Aniimo-DPS-v1.0.apk`](../../releases/latest/download/Aniimo-DPS-v1.0.apk)** *(or tap **Releases** on the right side of this GitHub page and tap **`Aniimo-DPS-v1.0.apk`** under **Assets**)*.
-2. Confirm the downloaded file is **`Aniimo-DPS-v1.0.apk`** (~45 MB).
-3. Tap the downloaded file on your Android phone and select **Install**.
+### ✅ How to Install now:
+1. Push this update from AI Studio to your GitHub repository (** note: make sure your GitHub repository is set to **Public** so friends can download without needing a GitHub login **).
+2. Tap **[Download `Aniimo-DPS-v1.0.apk` Directly (34.3 MB)](../../raw/HEAD/dist/Aniimo-DPS-v1.0.apk)** above.
+3. Check that the downloaded file size is **34.3 MB** (not a few KB), then tap it on your phone to **Install**.
