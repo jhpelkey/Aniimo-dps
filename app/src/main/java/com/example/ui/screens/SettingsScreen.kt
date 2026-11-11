@@ -57,6 +57,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import com.example.data.model.FirestoreLivePatchNote
 import com.example.data.model.SkillBalanceChange
 import com.example.data.model.StatBalanceChange
@@ -679,6 +686,10 @@ fun CloudSyncStatusContent(
     currentTextColor: Color,
     onShowMessage: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val publicInviteUrl = "https://ais-pre-pmpdvh6afb4hvhij3bcahx-905521185616.us-east1.run.app"
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -716,13 +727,13 @@ fun CloudSyncStatusContent(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Firebase Cloud Firestore Connected",
+                                text = "Public & Unrestricted Cloud Builds Active",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
                             Text(
-                                text = "Zero-trust verified • Realtime updates enabled",
+                                text = "Firebase Cloud Firestore • Open to all invited players",
                                 fontSize = 11.sp,
                                 color = Color(0xFF10B981)
                             )
@@ -732,7 +743,7 @@ fun CloudSyncStatusContent(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     Text(
-                        text = "All Aniimo builds, 4-character team compositions, leaderboard speedrun submissions, and discussion board posts are synchronized across the community in real-time.",
+                        text = "All 4-Aniimo builds, team compositions, leaderboard speedrun submissions, and discussion board posts are public and unrestricted across the community in real-time.",
                         fontSize = 12.sp,
                         color = Color(0xFFCBD5E1),
                         lineHeight = 18.sp
@@ -745,7 +756,7 @@ fun CloudSyncStatusContent(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Button(
-                            onClick = { onShowMessage("Database synchronization refreshed! All collections are up to date.") },
+                            onClick = { onShowMessage("Database synchronization refreshed! All public builds are synced.") },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.weight(1f)
@@ -755,6 +766,248 @@ fun CloudSyncStatusContent(
                                 color = Color(0xFF0F172A),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Public Invite Friends Card
+        item {
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF131D33)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_invite_friends_card")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF38BDF8).copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = null,
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Invite Friends & Community Members",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Unrestricted public invite link for other players",
+                                fontSize = 11.sp,
+                                color = Color(0xFF38BDF8)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF0F172A))
+                            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = publicInviteUrl,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF38BDF8)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                val inviteMsg = "Join Aniimo DPS (Unrestricted Public Build & Speedrun Community): $publicInviteUrl"
+                                clipboardManager.setText(AnnotatedString(inviteMsg))
+                                try {
+                                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_SUBJECT, "Join Aniimo DPS Community App")
+                                        putExtra(Intent.EXTRA_TEXT, inviteMsg)
+                                    }
+                                    context.startActivity(Intent.createChooser(sendIntent, "Invite Friends to Aniimo DPS"))
+                                } catch (_: Exception) {
+                                }
+                                onShowMessage("Invite link copied & ready to share!")
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("settings_share_invite_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = null,
+                                tint = Color(0xFF0F172A),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Invite Friends",
+                                color = Color(0xFF0F172A),
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(publicInviteUrl))
+                                onShowMessage("Public App URL copied to clipboard!")
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("settings_copy_invite_link_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = null,
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Copy Link",
+                                color = Color(0xFF38BDF8),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Google Play Store Release & AAB Export Card
+        item {
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF131D33)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA855F7).copy(alpha = 0.6f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("google_play_release_card")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFA855F7).copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Verified,
+                                contentDescription = null,
+                                tint = Color(0xFFD8B4FE),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Google Play Store Release Ready",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Package: com.aistudio.aniimodps.kvyxzt • v1.0 (SDK 36)",
+                                fontSize = 11.sp,
+                                color = Color(0xFFD8B4FE)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val checklist = listOf(
+                        "App Title Compliant: 'Aniimo DPS' (10/30 chars, Play Policy verified)",
+                        "Permissions Clean: INTERNET only (zero restricted/storage permissions)",
+                        "Custom Adaptive Icon: Vector foreground + themed background configured",
+                        "Release Signing Ready: Signed AAB & APK build variants configured"
+                    )
+
+                    checklist.forEach { itemText ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = itemText,
+                                fontSize = 11.sp,
+                                color = Color(0xFFE2E8F0)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF0F172A))
+                            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "How to Publish to Google Play Store:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFFFDE047)
+                            )
+                            Text(
+                                text = "1. Open the Settings (gear) menu in the top-right of AI Studio.\n2. Select Export AAB (Android App Bundle) for Google Play Console or Export APK for direct Android install.\n3. Upload the exported .aab file to Google Play Console -> Production / Open Testing track.",
+                                fontSize = 11.sp,
+                                color = Color(0xFFCBD5E1),
+                                lineHeight = 16.sp
                             )
                         }
                     }

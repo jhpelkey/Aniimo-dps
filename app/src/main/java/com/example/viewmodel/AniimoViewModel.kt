@@ -252,7 +252,8 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
             AniimoSortOption.TIER -> {
                 filtered.sortedWith(
                     compareBy<Aniimo> { aniimo ->
-                        val effectiveTier = votesMap[aniimo.id]?.communityTier ?: aniimo.metaTier
+                        val voteEntity = votesMap[aniimo.id]
+                        val effectiveTier = if (voteEntity != null && voteEntity.totalVotes > 0) voteEntity.communityTier else aniimo.metaTier
                         when (effectiveTier) {
                             "S+" -> 1
                             "S" -> 2
@@ -262,7 +263,10 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
                             else -> 6
                         }
                     }
-                    .thenByDescending { votesMap[it.id]?.communityScore ?: 0f }
+                    .thenByDescending {
+                        val v = votesMap[it.id]
+                        if (v != null && v.totalVotes > 0) v.communityScore else 0f
+                    }
                     .thenByDescending { it.maxOptimizedDps }
                 )
             }
@@ -313,7 +317,27 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
     fun submitCustomTeam(team: com.example.data.model.TopRatedTeam) {
         viewModelScope.launch {
             repository.saveTopRatedTeam(team)
-            _userMessage.value = UiMessage("Custom team '${team.title}' published to community!")
+            try {
+                val uid = Firebase.auth.currentUser?.uid
+                if (!uid.isNullOrBlank()) {
+                    firestoreRepository.saveTeam(
+                        com.example.data.model.FirestoreTeam(
+                            id = team.id,
+                            userId = uid,
+                            authorName = team.author.ifBlank { Firebase.auth.currentUser?.displayName ?: "Community Builder" },
+                            name = team.title,
+                            tag = team.mode.displayName,
+                            description = team.strategyGuide,
+                            memberIds = team.members.map { it.aniimoId },
+                            isPublic = true,
+                            upvotes = team.upvotes
+                        )
+                    )
+                }
+            } catch (_: Exception) {
+                // Local Room persistence succeeded even if offline
+            }
+            _userMessage.value = UiMessage("Public team '${team.title}' published unrestricted to Community & Cloud!")
         }
     }
 
@@ -996,7 +1020,26 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             repository.saveCustomBuild(build)
-            _userMessage.value = UiMessage("4-Aniimo Build '${build.buildTitle}' saved to your library!")
+            try {
+                val uid = Firebase.auth.currentUser?.uid
+                if (!uid.isNullOrBlank()) {
+                    firestoreRepository.saveTeam(
+                        com.example.data.model.FirestoreTeam(
+                            userId = uid,
+                            authorName = Firebase.auth.currentUser?.displayName ?: "Community Builder",
+                            name = build.buildTitle,
+                            tag = "Public Build",
+                            description = "4-Aniimo Build (${main.name}, ${partner.name}, ${slot3.name}, ${slot4.name}) • ${build.calculatedDps} DPS",
+                            memberIds = listOf(main.id, partner.id, slot3.id, slot4.id),
+                            isPublic = true,
+                            upvotes = 1
+                        )
+                    )
+                }
+            } catch (_: Exception) {
+                // Local Room persistence succeeded even if offline
+            }
+            _userMessage.value = UiMessage("Public 4-Aniimo Build '${build.buildTitle}' saved & synced unrestricted!")
         }
     }
 

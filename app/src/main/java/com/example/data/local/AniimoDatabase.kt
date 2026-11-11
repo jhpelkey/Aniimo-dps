@@ -13,7 +13,7 @@ import androidx.room.RoomDatabase
         TopRatedTeamEntity::class,
         DiscussionPostEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class AniimoDatabase : RoomDatabase() {

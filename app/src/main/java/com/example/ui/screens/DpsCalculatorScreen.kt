@@ -750,15 +750,36 @@ fun DpsCalculatorScreen(
                         .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(16.dp))
                         .padding(16.dp)
                 ) {
-                    Text(
-                        text = "2. Save, Publish & Share Your 4-Aniimo Build",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = Color.White
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "2. Save, Publish & Share Your 4-Aniimo Build",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color.White,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF10B981).copy(alpha = 0.18f))
+                                .border(1.dp, Color(0xFF10B981), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = "PUBLIC • UNRESTRICTED",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFF34D399)
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Save locally, publish your 4-Aniimo build to Community Top Teams or the Discussion Board, or share/import a Build Code.",
+                        text = "Your 4-Aniimo builds are public and unrestricted by default so anyone you invite can view, import, and test your squad.",
                         fontSize = 11.sp,
                         color = Color(0xFF94A3B8)
                     )
@@ -826,7 +847,7 @@ fun DpsCalculatorScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Save to My Builds",
+                            text = "Save to My Builds (Public Cloud Sync)",
                             color = Color(0xFF0F172A),
                             fontWeight = FontWeight.Bold
                         )
@@ -889,6 +910,67 @@ fun DpsCalculatorScreen(
                                 fontWeight = FontWeight.ExtraBold
                             )
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            val shareCode = BuildShareCodec.encodeBuildCode(
+                                mainAniimo = mainAniimo,
+                                mainItem = mainHeldItem,
+                                partnerAniimo = partnerAniimo,
+                                partnerItem = partnerHeldItem,
+                                slot3Aniimo = slot3Aniimo,
+                                slot3Item = slot3HeldItem,
+                                slot4Aniimo = slot4Aniimo,
+                                slot4Item = slot4HeldItem,
+                                atk = awakeningAtk,
+                                breakStat = awakeningBreak,
+                                regen = awakeningRegen,
+                                hp = awakeningHp,
+                                pdef = awakeningPdef,
+                                mdef = awakeningMdef
+                            )
+                            val publicAppUrl = "https://ais-pre-pmpdvh6afb4hvhij3bcahx-905521185616.us-east1.run.app"
+                            val inviteText = buildString {
+                                append("Join me on Aniimo DPS (Public Unrestricted Community App)!\n")
+                                append("Squad: ${mainAniimo.name}, ${partnerAniimo.name}, ${slot3Aniimo.name} & ${slot4Aniimo.name} (${calcResult.totalDps} DPS)\n")
+                                append("Import Build Code: $shareCode\n")
+                                append("App Invite Link: $publicAppUrl")
+                            }
+                            clipboardManager.setText(AnnotatedString(inviteText))
+                            try {
+                                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_SUBJECT, "Join Aniimo DPS & Import My 4-Aniimo Build")
+                                    putExtra(Intent.EXTRA_TEXT, inviteText)
+                                }
+                                context.startActivity(Intent.createChooser(sendIntent, "Invite Friends & Share Build"))
+                            } catch (_: Exception) {
+                                // Fallback to clipboard if no activity found
+                            }
+                            onShowMessage?.invoke("Public invite link & 4-Aniimo Build Code copied to clipboard!")
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("invite_friends_build_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Invite Friends",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Invite Friends & Share Public Build Link",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
                     }
                 }
             }

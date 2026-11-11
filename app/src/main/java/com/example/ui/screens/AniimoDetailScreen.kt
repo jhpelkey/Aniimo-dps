@@ -203,8 +203,8 @@ fun AniimoDetailScreen(
                                     fontWeight = FontWeight.Black,
                                     color = Color.White
                                 )
-                                val displayTier = communityVote?.communityTier ?: aniimo.metaTier
                                 val totalVotes = communityVote?.totalVotes ?: 0
+                                val displayTier = if (totalVotes > 0 && communityVote != null) communityVote.communityTier else aniimo.metaTier
 
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Box(
@@ -1880,8 +1880,8 @@ fun CommunityTierVotingSection(
     onVoteTier: ((String) -> Unit)?,
     modifier: Modifier = Modifier
 ) {
-    val displayTier = communityVote?.communityTier ?: aniimo.metaTier
     val totalVotes = communityVote?.totalVotes ?: 0
+    val displayTier = if (totalVotes > 0 && communityVote != null) communityVote.communityTier else aniimo.metaTier
     val score = communityVote?.communityScore ?: 3.0f
     val userVote = communityVote?.userVote
 

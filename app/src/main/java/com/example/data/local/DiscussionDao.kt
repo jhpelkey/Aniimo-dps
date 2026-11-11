@@ -26,4 +26,7 @@ interface DiscussionDao {
 
     @Query("SELECT * FROM discussion_posts WHERE id = :postId LIMIT 1")
     suspend fun getPostById(postId: Int): DiscussionPostEntity?
+
+    @Query("DELETE FROM discussion_posts")
+    suspend fun clearAll()
 }

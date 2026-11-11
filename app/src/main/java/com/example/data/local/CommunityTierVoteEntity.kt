@@ -153,4 +153,7 @@ interface CommunityTierVoteDao {
 
     @Query("SELECT COUNT(*) FROM community_tier_votes")
     suspend fun getCount(): Int
+
+    @Query("DELETE FROM community_tier_votes")
+    suspend fun clearAll()
 }

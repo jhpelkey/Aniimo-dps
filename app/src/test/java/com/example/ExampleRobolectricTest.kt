@@ -27,7 +27,7 @@ import com.example.data.model.Element
 class ExampleRobolectricTest {
 
     @Before
-    fun setUp() {
+    fun setUp() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         if (FirebaseApp.getApps(context).isEmpty()) {
             FirebaseApp.initializeApp(
@@ -39,6 +39,8 @@ class ExampleRobolectricTest {
                     .build()
             )
         }
+        val db = AniimoDatabase.getDatabase(context)
+        AniimoRepository(db).clearAllCommunityPostsAndVotes()
     }
 
     @Test
@@ -106,8 +108,7 @@ class ExampleRobolectricTest {
         assertTrue("Fulmintis must have Ferocious Fang and Pendant", fulmintis.bestItems.any { it.name.contains("Ferocious Fang") })
 
         val entries = repository.getAllLeaderboardEntries().first()
-        assertTrue("Leaderboard should be seeded with speedrun proof entries", entries.isNotEmpty())
-        assertTrue("Seeded runs should contain video proof urls", entries.all { it.videoProofUrl.isNotBlank() })
+        assertTrue("Leaderboard should start fresh with 0 generated entries", entries.isEmpty())
 
         // Validate skills structure: base skills, core skills, and highest DPS designation
         aniimos.forEach { aniimo ->
@@ -267,30 +268,27 @@ class ExampleRobolectricTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = AniimoDatabase.getDatabase(context)
         val repository = AniimoRepository(db)
+        repository.clearAllCommunityPostsAndVotes()
         repository.seedDatabaseIfEmpty()
 
         val voteDao = db.communityTierVoteDao()
-        assertTrue("Community votes should be seeded", voteDao.getCount() >= 75)
+        assertEquals("Community votes should start fresh with 0 generated votes", 0, voteDao.getCount())
 
-        // Test Emberpup voting
-        val initialVote = voteDao.getVoteSync("emberpup")
-        assertNotNull("Emberpup should have seeded community votes", initialVote)
-        val initialScore = initialVote!!.communityScore
-
-        // Cast an S+ vote for Emberpup
+        // Cast an S+ vote for Emberpup from a fresh slate
         repository.submitTierVote("emberpup", "S+")
 
         val updatedVote = voteDao.getVoteSync("emberpup")
         assertNotNull(updatedVote)
         assertEquals("User vote must be recorded as S+", "S+", updatedVote!!.userVote)
-        assertTrue("Community score should increase after user casts S+ vote", updatedVote.communityScore >= initialScore)
-        assertEquals(initialVote.totalVotes + 1, updatedVote.totalVotes)
+        assertEquals("Total votes must be 1 after first community vote", 1, updatedVote.totalVotes)
+        assertEquals("S+", updatedVote.communityTier)
 
         // Change vote from S+ to B
         repository.submitTierVote("emberpup", "B")
         val reVote = voteDao.getVoteSync("emberpup")
         assertEquals("User vote must be updated to B", "B", reVote!!.userVote)
-        assertEquals(initialVote.totalVotes + 1, reVote.totalVotes)
+        assertEquals(1, reVote.totalVotes)
+        assertEquals("B", reVote.communityTier)
     }
 
     @Test
@@ -429,25 +427,10 @@ class ExampleRobolectricTest {
             )
         }
 
-        // 3. Validate Discussion Board seeded posts, new post creation, upvoting, and replying
+        // 3. Validate Discussion Board starts fresh with 0 generated posts, then test new post creation, upvoting, and replying
+        repository.clearAllCommunityPostsAndVotes()
         val initialPosts = repository.getAllDiscussionPosts().first()
-        assertTrue("Discussion Board should be seeded with community threads", initialPosts.size >= 8)
-
-        val fulmintisPost = initialPosts.first { it.aniimoId == "fulmintis" }
-        val initialUpvotes = fulmintisPost.upvotes
-        val initialReplyCount = fulmintisPost.replies.size
-
-        // Upvote post
-        repository.toggleDiscussionUpvote(fulmintisPost.id)
-        val afterUpvote = repository.getAllDiscussionPosts().first().first { it.id == fulmintisPost.id }
-        assertEquals(initialUpvotes + 1, afterUpvote.upvotes)
-        assertTrue(afterUpvote.hasUserUpvoted)
-
-        // Add reply to post
-        repository.addDiscussionReply(fulmintisPost.id, "TestExplorer", "Great Fulmintis build idea!")
-        val afterReply = repository.getAllDiscussionPosts().first().first { it.id == fulmintisPost.id }
-        assertEquals(initialReplyCount + 1, afterReply.replies.size)
-        assertEquals("Great Fulmintis build idea!", afterReply.replies.last().content)
+        assertTrue("Discussion Board should start fresh with 0 generated posts", initialPosts.isEmpty())
 
         // Add a brand new discussion thread for Emberpup
         val emberpup = repository.aniimos.first { it.id == "emberpup" }
@@ -465,7 +448,21 @@ class ExampleRobolectricTest {
             )
         )
         val updatedPosts = repository.getAllDiscussionPosts().first()
-        assertTrue(updatedPosts.any { it.title == "Emberpup Early Game Campaign Rush" })
+        assertEquals(1, updatedPosts.size)
+        val createdPost = updatedPosts.first()
+        assertEquals("Emberpup Early Game Campaign Rush", createdPost.title)
+
+        // Upvote post
+        repository.toggleDiscussionUpvote(createdPost.id)
+        val afterUpvote = repository.getAllDiscussionPosts().first().first { it.id == createdPost.id }
+        assertEquals(createdPost.upvotes + 1, afterUpvote.upvotes)
+        assertTrue(afterUpvote.hasUserUpvoted)
+
+        // Add reply to post
+        repository.addDiscussionReply(createdPost.id, "TestExplorer", "Great Emberpup build idea!")
+        val afterReply = repository.getAllDiscussionPosts().first().first { it.id == createdPost.id }
+        assertEquals(1, afterReply.replies.size)
+        assertEquals("Great Emberpup build idea!", afterReply.replies.last().content)
     }
 
     @Test
@@ -572,31 +569,54 @@ class ExampleRobolectricTest {
         assertEquals(20, decoded.atk)
         assertEquals(18, decoded.breakStat)
 
-        // 3. Validate Leaderboard Legit (Green) vs Not Legit (Red) entries and 1-sec fake video flagging
-        val allEntries = repository.getAllLeaderboardEntries().first()
-        val legitEntries = allEntries.filter { it.isLegitCommunityVerified }
-        val flaggedRedEntries = allEntries.filter { !it.isLegitCommunityVerified }
+        // 3. Validate Leaderboard starts fresh and supports user-submitted Legit / Not Legit voting
+        repository.clearAllCommunityPostsAndVotes()
+        assertTrue("Leaderboard starts fresh with 0 entries", repository.getAllLeaderboardEntries().first().isEmpty())
 
-        assertTrue("Must have Verified Legit (Green) speedrun entries", legitEntries.size >= 7)
-        assertTrue("Must have Flagged Not Legit (Red) 1-sec clip entries", flaggedRedEntries.size >= 2)
-        assertTrue("Flagged 1s video entry must be detected as suspicious short video",
-            flaggedRedEntries.any { it.videoDurationSeconds == 1 && it.isSuspiciousShortVideo })
+        val submittedId = repository.submitRun(
+            com.example.data.model.LeaderboardEntry(
+                id = 0,
+                bossId = "alpha_nether_colossus",
+                bossName = "Alpha Nether Colossus",
+                runnerName = "NewMemberRunner",
+                mainAniimoId = "fulmintis",
+                mainAniimoName = "Fulmintis",
+                mainAniimoElement = Element.LIGHTNING,
+                partnerAniimoId = "dazmand",
+                partnerAniimoName = "Dazmand",
+                partnerAniimoElement = Element.LIGHT,
+                clearTimeMillis = 38500L,
+                clearTimeDisplay = "00:38.50",
+                videoProofUrl = "https://youtube.com/watch?v=real_member_clear",
+                videoPlatform = "YouTube",
+                weaponEquipped = "Pendant (+15)",
+                relicSetEquipped = "Partner: Capacitous Battery (+15)",
+                estimatedDpsOutput = 165000,
+                submittedDate = "Just now",
+                isVerified = true,
+                upvotes = 0,
+                hasUserUpvoted = false,
+                isUserSubmission = true,
+                runnerNotes = "First real community run!",
+                legitVotes = 0,
+                notLegitVotes = 0,
+                userLegitVote = null,
+                videoDurationSeconds = 40
+            )
+        )
 
-        // 4. Test voting Legit and Not Legit on an entry
-        val targetEntry = legitEntries.first()
-        val initialLegitCount = targetEntry.legitVotes
-        repository.voteLeaderboardLegitimacy(targetEntry.id, voteLegit = true)
+        // 4. Test voting Legit and Not Legit on the user-submitted entry
+        repository.voteLeaderboardLegitimacy(submittedId, voteLegit = true)
 
-        val afterLegitVote = repository.getAllLeaderboardEntries().first().first { it.id == targetEntry.id }
-        assertEquals(initialLegitCount + 1, afterLegitVote.legitVotes)
+        val afterLegitVote = repository.getAllLeaderboardEntries().first().first { it.id == submittedId }
+        assertEquals(1, afterLegitVote.legitVotes)
         assertEquals("LEGIT", afterLegitVote.userLegitVote)
         assertTrue(afterLegitVote.isLegitCommunityVerified)
 
         // Switch vote to Not Legit
-        val initialNotLegitCount = afterLegitVote.notLegitVotes
-        repository.voteLeaderboardLegitimacy(targetEntry.id, voteLegit = false)
-        val afterNotLegitVote = repository.getAllLeaderboardEntries().first().first { it.id == targetEntry.id }
-        assertEquals(initialNotLegitCount + 1, afterNotLegitVote.notLegitVotes)
+        repository.voteLeaderboardLegitimacy(submittedId, voteLegit = false)
+        val afterNotLegitVote = repository.getAllLeaderboardEntries().first().first { it.id == submittedId }
+        assertEquals(1, afterNotLegitVote.notLegitVotes)
         assertEquals("NOT_LEGIT", afterNotLegitVote.userLegitVote)
     }
 
@@ -661,7 +681,9 @@ class ExampleRobolectricTest {
 
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = AniimoDatabase.getDatabase(context)
-        val entries = db.leaderboardDao().getAllEntries().first()
+        val entries = kotlinx.coroutines.withTimeout(5000L) {
+            db.leaderboardDao().getAllEntries().first { list -> list.any { it.runnerName == "SpeedsterX" } }
+        }
         val customEntry = entries.find { it.runnerName == "SpeedsterX" }
         assertNotNull("Custom entry must be saved in database", customEntry)
         assertEquals("Alpha Solarix Titan", customEntry!!.bossName)
@@ -682,7 +704,9 @@ class ExampleRobolectricTest {
             customTopicName = "Future Aniimo: Zephyrion"
         )
 
-        val posts = db.discussionDao().getAllPosts().first()
+        val posts = kotlinx.coroutines.withTimeout(5000L) {
+            db.discussionDao().getAllPosts().first { list -> list.any { it.title == "Patch 2.0 Unreleased Aniimo & Relic Theory" } }
+        }
         val customPost = posts.find { it.title == "Patch 2.0 Unreleased Aniimo & Relic Theory" }
         assertNotNull("Custom discussion post must be saved", customPost)
         assertEquals("Future Aniimo: Zephyrion", customPost!!.aniimoName)

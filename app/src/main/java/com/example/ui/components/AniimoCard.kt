@@ -72,8 +72,8 @@ fun AniimoCard(
     modifier: Modifier = Modifier,
     communityVote: com.example.data.local.CommunityTierVoteEntity? = null
 ) {
-    val displayTier = communityVote?.communityTier ?: aniimo.metaTier
     val totalVotes = communityVote?.totalVotes ?: 0
+    val displayTier = if (totalVotes > 0 && communityVote != null) communityVote.communityTier else aniimo.metaTier
 
     Card(
         modifier = modifier

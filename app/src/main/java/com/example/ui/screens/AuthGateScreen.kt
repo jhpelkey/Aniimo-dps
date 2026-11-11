@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,21 +22,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Leaderboard
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,7 +56,9 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.NoCredentialException
 import com.example.R
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
@@ -75,6 +78,14 @@ fun AuthGateScreen(
     val credentialManager = remember { CredentialManager.create(context) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        attemptAutoSignIn(
+            context = context,
+            credentialManager = credentialManager,
+            onAuthSuccess = onAuthSuccess
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -112,33 +123,33 @@ fun AuthGateScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "Aniimo DPS Cloud",
+                    text = "Aniimo DPS Community",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
-                    text = "Sign in to synchronize your 4-Aniimo builds, post to community discussion boards, and verify leaderboard speedrun submissions with live video proof.",
+                    text = "Public & Unrestricted Community Edition • Sign in with Google to sync 4-Aniimo builds, share team codes with friends, and post verified speedruns.",
                     fontSize = 13.sp,
                     color = Color(0xFF94A3B8),
                     textAlign = TextAlign.Center,
                     lineHeight = 18.sp
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 // Feature Highlights
                 val features = listOf(
-                    Icons.Default.Group to "Save & publish custom 4-Aniimo teams",
-                    Icons.Default.Forum to "Discussion board threads & theorycrafting",
+                    Icons.Default.Group to "Unrestricted public 4-Aniimo teams & build codes",
+                    Icons.Default.Forum to "Community discussion board & Prismana showcases",
                     Icons.Default.Leaderboard to "Submit speedruns & vote Legit on runs",
-                    Icons.Default.AutoAwesome to "Live patch notes & auto-balancing"
+                    Icons.Default.AutoAwesome to "Live patch notes & real-time cloud sync"
                 )
 
                 features.forEach { (icon, desc) ->
@@ -163,7 +174,7 @@ fun AuthGateScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
                 errorMessage?.let { error ->
                     Text(
@@ -231,8 +242,84 @@ fun AuthGateScreen(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        val publicInviteUrl = "https://ais-pre-pmpdvh6afb4hvhij3bcahx-905521185616.us-east1.run.app"
+                        val inviteMsg = "Join Aniimo DPS (Public Unrestricted Community App): $publicInviteUrl"
+                        try {
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "Join Aniimo DPS Community App")
+                                putExtra(Intent.EXTRA_TEXT, inviteMsg)
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, "Invite Friends to Aniimo DPS"))
+                        } catch (_: Exception) {
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("auth_invite_friends_button"),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.6f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Invite Friends",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Invite Friends / Share App Link",
+                        color = Color(0xFF38BDF8),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
             }
         }
+    }
+}
+
+suspend fun attemptAutoSignIn(
+    context: Context,
+    credentialManager: CredentialManager,
+    onAuthSuccess: () -> Unit
+) {
+    val clientId = try {
+        context.getString(R.string.default_web_client_id)
+    } catch (_: Exception) {
+        return
+    }
+
+    val googleIdOption = GetGoogleIdOption.Builder()
+        .setFilterByAuthorizedAccounts(true)
+        .setServerClientId(clientId)
+        .setAutoSelectEnabled(true)
+        .build()
+
+    val request = GetCredentialRequest.Builder()
+        .addCredentialOption(googleIdOption)
+        .build()
+
+    try {
+        val activity = context as? Activity ?: return
+        val result = credentialManager.getCredential(activity, request)
+        val credential = result.credential
+        if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+            val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
+            val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
+            Firebase.auth.signInWithCredential(authCredential).await()
+            onAuthSuccess()
+        }
+    } catch (_: NoCredentialException) {
+        // Normal on first launch; user taps "Sign in with Google"
+    } catch (e: Exception) {
+        Log.w("Auth", "Auto sign-in skipped: ${e.message}")
     }
 }
 
