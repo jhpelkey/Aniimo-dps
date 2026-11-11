@@ -1,28 +1,16 @@
 # Aniimo DPS — Public Community Companion App
 
-**Aniimo DPS** is an Android community app for **Aniimo** featuring:
-- **126 Canonical Aniimo Roster** (Breezy Plains & Whisperwake Isles) with verified dual typings, Prismana & regional forms, and Exhibition Wall Sparkle variants.
-- **4-Aniimo Team Builder & DPS Simulator** with 1 Held Item per Aniimo, 6-Stat Awakening sliders (`ATK`, `BREAK`, `REGEN`, `HP`, `PDEF`, `MDEF`), and instant `ANIIMO-V4` share codes.
-- **Speedrun Leaderboard** with custom runner search, future Alpha boss support, video proof links, and community Legit / Not Legit verification voting.
-- **Community Discussion Board** with image & video showcase support for Prismana and Home builds.
-- **Customizable Themes & Live Patch Notes** in Settings.
+## 📲 [👉 CLICK HERE TO DOWNLOAD & INSTALL `Aniimo-DPS-v1.0.apk` FOR ANDROID](../../releases/latest/download/Aniimo-DPS-v1.0.apk)
 
 ---
 
-## 📲 How to Install on Android (From GitHub)
+### Why Did It Say "Not a Valid APK"? (Quick Fix)
+Android shows **"Not a valid APK"** or **"Problem parsing the package"** in 3 situations on GitHub:
+1. **Downloading from the `Actions` tab instead of `Releases`**: Files downloaded from the GitHub **Actions** tab are wrapped inside a **`.zip` archive** (`Aniimo-DPS-Android-Installers.zip`). Android cannot install a `.zip` file directly unless you unzip/extract it first.
+2. **Tapping `.aab` instead of `.apk`**: `.aab` files are only for the Google Play Console—Android phones only install **`.apk`** files.
+3. **Long-pressing "Download link" on a GitHub code page**: Doing that downloads a tiny HTML web page (~100 KB) instead of the 45 MB `.apk` binary.
 
-Anyone can install **Aniimo DPS** directly from this GitHub repository:
-
-1. Look at the **Releases** section on the right-hand sidebar of this GitHub repository (or go to the **`/releases`** tab).
-2. Under **Assets** on the latest release (**`Aniimo DPS v1.0`**), tap **`Aniimo-DPS-v1.0.apk`** to download it to your Android phone.
-3. Open the downloaded **`Aniimo-DPS-v1.0.apk`** file on your phone and tap **Install**.
-
----
-
-## 🚀 Automated GitHub Actions Pipeline
-
-This repository includes an automated workflow (`.github/workflows/android-release.yml`) that:
-1. Restores `debug.keystore` from `debug.keystore.base64` and generates a release signing key (`my-upload-key.jks`).
-2. Installs **JDK 21**, **Gradle 9.3.1**, and **Android SDK 36**.
-3. Builds both **`Aniimo-DPS-v1.0.apk`** (for direct Android installation) and **`Aniimo-DPS-v1.0.aab`** (for Google Play Store).
-4. Automatically publishes **`Aniimo-DPS-v1.0.apk`** and **`Aniimo-DPS-v1.0.aab`** to the **GitHub Releases** page on every push to `main` / `master`.
+### ✅ How to Install Properly on Android
+1. Tap the direct download link at the top of this page: **[Download `Aniimo-DPS-v1.0.apk`](../../releases/latest/download/Aniimo-DPS-v1.0.apk)** *(or tap **Releases** on the right side of this GitHub page and tap **`Aniimo-DPS-v1.0.apk`** under **Assets**)*.
+2. Confirm the downloaded file is **`Aniimo-DPS-v1.0.apk`** (~45 MB).
+3. Tap the downloaded file on your Android phone and select **Install**.

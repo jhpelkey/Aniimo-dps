@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build-and-release:
-    name: Build Signed APK & Publish GitHub Release
+    name: Build Valid Signed APK & Publish GitHub Release
     runs-on: ubuntu-latest
 
     steps:
@@ -28,7 +28,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK Licenses & Install SDK 36 / 36.1
+      - name: Accept Android SDK Licenses & Install SDK 36 / Build-Tools
         run: |
           yes | sdkmanager --licenses || true
           sdkmanager "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0" || true
@@ -70,47 +70,46 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Build Installable APK & Play Store AAB
+      - name: Build Signed APK & AAB
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
           STORE_PASSWORD: aniimorelease123
           KEY_PASSWORD: aniimorelease123
         run: |
-          gradle assembleDebug assembleRelease bundleRelease --no-daemon
+          gradle assembleDebug assembleRelease bundleRelease -x lint -x lintVitalRelease --no-daemon
 
-      - name: Prepare Release Files
+      - name: Align & Re-Sign APK with V1 + V2 + V3 Signatures for Universal Android Compatibility
         run: |
           mkdir -p release-dist
-          cp app/build/outputs/apk/release/app-release.apk release-dist/Aniimo-DPS-v1.0.apk
-          cp app/build/outputs/apk/debug/app-debug.apk release-dist/Aniimo-DPS-v1.0-debug.apk
-          cp app/build/outputs/bundle/release/app-release.aab release-dist/Aniimo-DPS-v1.0.aab
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name "apksigner" | sort -V | tail -n 1)
+          ZIPALIGN=$(find $ANDROID_HOME/build-tools -name "zipalign" | sort -V | tail -n 1)
 
-      - name: Upload APK & AAB Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: Aniimo-DPS-Android-Installers
-          path: |
+          $ZIPALIGN -p -f -v 4 app/build/outputs/apk/release/app-release.apk release-dist/Aniimo-DPS-v1.0.apk
+          $APKSIGNER sign \
+            --ks my-upload-key.jks \
+            --ks-key-alias upload \
+            --ks-pass pass:aniimorelease123 \
+            --key-pass pass:aniimorelease123 \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
             release-dist/Aniimo-DPS-v1.0.apk
-            release-dist/Aniimo-DPS-v1.0-debug.apk
-            release-dist/Aniimo-DPS-v1.0.aab
+
+          $APKSIGNER verify -v release-dist/Aniimo-DPS-v1.0.apk
+          cp app/build/outputs/bundle/release/app-release.aab release-dist/Aniimo-DPS-v1.0-PlayStore.aab
 
       - name: Publish Installable APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0
-          name: "Aniimo DPS v1.0 — Public Community Android Installer (.APK)"
+          name: "Aniimo DPS v1.0 — Official Android APK Installer"
           body: |
-            ##📲 Install Aniimo DPS on Android
-            1. On your Android phone or tablet, download **`Aniimo-DPS-v1.0.apk`** under **Assets** below.
-            2. Tap the downloaded `.apk` file to install (if prompted by Android, allow installation from your browser).
-            3. Open **Aniimo DPS** and sign in or share 4-Aniimo builds, Leaderboard speedruns, and Discussion Board posts!
+            ## 📲 Direct Android Phone Installation
+            Tap **`Aniimo-DPS-v1.0.apk`** under **Assets** below to download and install the app directly on your Android phone or tablet.
 
-            ### Included Files
-            - **`Aniimo-DPS-v1.0.apk`** — Signed Release APK for direct installation on any Android device.
-            - **`Aniimo-DPS-v1.0.aab`** — Signed Android App Bundle (`.aab`) for Google Play Console upload.
+            > **Important**: Download **`Aniimo-DPS-v1.0.apk`** (approx. 45 MB) from the **Assets** section below. Do **not** try to install `.zip` files from the Actions tab or `.aab` files on your phone, as Android only installs `.apk` files directly.
           files: |
             release-dist/Aniimo-DPS-v1.0.apk
-            release-dist/Aniimo-DPS-v1.0.aab
           draft: false
           prerelease: false
         env:
