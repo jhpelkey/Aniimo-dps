@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import com.google.firebase.Firebase
@@ -89,15 +90,12 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
     val currentUserEmail: StateFlow<String?> = authEmailFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), try { Firebase.auth.currentUser?.email } catch (_: Exception) { null })
 
-    val isAdminUser: StateFlow<Boolean> = combine(
-        authEmailFlow,
-        _adminOverrideEnabled
-    ) { email, overrideEnabled ->
-        overrideEnabled || email.equals(ADMIN_EMAIL, ignoreCase = true)
+    val isAdminUser: StateFlow<Boolean> = authEmailFlow.map { email ->
+        !email.isNullOrBlank() && email.equals(ADMIN_EMAIL, ignoreCase = true)
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
-        try { Firebase.auth.currentUser?.email.equals(ADMIN_EMAIL, ignoreCase = true) } catch (_: Exception) { false }
+        try { Firebase.auth.currentUser?.email?.equals(ADMIN_EMAIL, ignoreCase = true) == true } catch (_: Exception) { false }
     )
 
     val activeModerationBans: StateFlow<List<com.example.data.model.FirestoreModerationBan>>
@@ -1635,14 +1633,6 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // ==========================================
-    // ADMIN MODERATION & TIMEOUT / BAN ACTIONS
-    // ==========================================
-    fun toggleAdminModeOverride(enabled: Boolean) {
-        _adminOverrideEnabled.value = enabled
-        val status = if (enabled) "Admin Moderator Controls enabled ($ADMIN_EMAIL)" else "Admin Moderator override disabled"
-        _userMessage.value = UiMessage(status)
-    }
 
     private fun findActiveBanForUser(authorName: String): com.example.data.model.FirestoreModerationBan? {
         val currentUid = try { Firebase.auth.currentUser?.uid } catch (_: Exception) { null }

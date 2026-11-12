@@ -138,7 +138,6 @@ fun SettingsScreen(
     isAdmin: Boolean = false,
     currentUserEmail: String? = null,
     activeBans: List<FirestoreModerationBan> = emptyList(),
-    onToggleAdminOverride: ((Boolean) -> Unit)? = null,
     onIssueTimeoutOrBan: ((String, String, String) -> Unit)? = null,
     onRevokeBan: ((FirestoreModerationBan) -> Unit)? = null,
     liveAppConfig: FirestoreAppConfig = FirestoreAppConfig(),
@@ -272,7 +271,6 @@ fun SettingsScreen(
                     isAdmin = isAdmin,
                     currentUserEmail = currentUserEmail,
                     activeBans = activeBans,
-                    onToggleAdminOverride = onToggleAdminOverride,
                     onIssueTimeoutOrBan = onIssueTimeoutOrBan,
                     onRevokeBan = onRevokeBan,
                     liveAppConfig = liveAppConfig,
@@ -711,7 +709,6 @@ fun CloudSyncStatusContent(
     isAdmin: Boolean = false,
     currentUserEmail: String? = null,
     activeBans: List<FirestoreModerationBan> = emptyList(),
-    onToggleAdminOverride: ((Boolean) -> Unit)? = null,
     onIssueTimeoutOrBan: ((String, String, String) -> Unit)? = null,
     onRevokeBan: ((FirestoreModerationBan) -> Unit)? = null,
     liveAppConfig: FirestoreAppConfig = FirestoreAppConfig(),
@@ -767,36 +764,15 @@ fun CloudSyncStatusContent(
                                 color = if (isAdmin) Color(0xFF34D399) else Color(0xFF94A3B8)
                             )
                         }
-
-                        if (onToggleAdminOverride != null) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = if (isAdmin) "ADMIN ON" else "ADMIN OFF",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = if (isAdmin) Color(0xFF34D399) else Color(0xFF94A3B8)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Switch(
-                                    checked = isAdmin,
-                                    onCheckedChange = { onToggleAdminOverride(it) },
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = Color(0xFF0F172A),
-                                        checkedTrackColor = Color(0xFFF43F5E)
-                                    ),
-                                    modifier = Modifier.testTag("admin_mode_toggle_switch")
-                                )
-                            }
-                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
                         text = if (isAdmin) {
-                            "Admin Mode is ACTIVE. You can remove unwanted posts, runs, or 4-Aniimo teams directly on the Board, Leaderboard, and Teams tabs, or issue timeouts and bans below."
+                            "Admin Mode is ACTIVE (Authenticated as jhpelkey@gmail.com). You can remove unwanted posts, runs, or 4-Aniimo teams directly on the Board, Leaderboard, and Teams tabs, or issue timeouts and bans below."
                         } else {
-                            "Sign in with jhpelkey@gmail.com (or toggle Admin Mode above while testing) to unlock Remove Post/Run/Team buttons and issue user timeouts or bans."
+                            "Admin controls are locked. Sign in with jhpelkey@gmail.com to unlock moderation tools and OTA app config publishing."
                         },
                         fontSize = 11.sp,
                         color = Color(0xFFE2E8F0),
