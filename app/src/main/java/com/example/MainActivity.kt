@@ -587,6 +587,7 @@ fun AniimoMainScaffold(
                         isAdmin = isAdminUser,
                         currentUserEmail = currentUserEmail,
                         activeBans = activeModerationBans,
+                        onToggleAdminOverride = { enabled -> viewModel.toggleAdminModeOverride(enabled) },
                         onIssueTimeoutOrBan = { username, actionType, reason ->
                             viewModel.adminIssueTimeoutOrBan(username, actionType, reason)
                         },

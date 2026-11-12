@@ -138,6 +138,7 @@ fun SettingsScreen(
     isAdmin: Boolean = false,
     currentUserEmail: String? = null,
     activeBans: List<FirestoreModerationBan> = emptyList(),
+    onToggleAdminOverride: ((Boolean) -> Unit)? = null,
     onIssueTimeoutOrBan: ((String, String, String) -> Unit)? = null,
     onRevokeBan: ((FirestoreModerationBan) -> Unit)? = null,
     liveAppConfig: FirestoreAppConfig = FirestoreAppConfig(),
@@ -271,6 +272,7 @@ fun SettingsScreen(
                     isAdmin = isAdmin,
                     currentUserEmail = currentUserEmail,
                     activeBans = activeBans,
+                    onToggleAdminOverride = onToggleAdminOverride,
                     onIssueTimeoutOrBan = onIssueTimeoutOrBan,
                     onRevokeBan = onRevokeBan,
                     liveAppConfig = liveAppConfig,
@@ -709,6 +711,7 @@ fun CloudSyncStatusContent(
     isAdmin: Boolean = false,
     currentUserEmail: String? = null,
     activeBans: List<FirestoreModerationBan> = emptyList(),
+    onToggleAdminOverride: ((Boolean) -> Unit)? = null,
     onIssueTimeoutOrBan: ((String, String, String) -> Unit)? = null,
     onRevokeBan: ((FirestoreModerationBan) -> Unit)? = null,
     liveAppConfig: FirestoreAppConfig = FirestoreAppConfig(),
@@ -763,6 +766,27 @@ fun CloudSyncStatusContent(
                                 fontSize = 11.sp,
                                 color = if (isAdmin) Color(0xFF34D399) else Color(0xFF94A3B8)
                             )
+                        }
+
+                        if (onToggleAdminOverride != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (isAdmin) "ADMIN ON" else "ADMIN OFF",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = if (isAdmin) Color(0xFF34D399) else Color(0xFF94A3B8)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Switch(
+                                    checked = isAdmin,
+                                    onCheckedChange = { onToggleAdminOverride(it) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color(0xFF0F172A),
+                                        checkedTrackColor = Color(0xFFF43F5E)
+                                    ),
+                                    modifier = Modifier.testTag("admin_mode_toggle_switch")
+                                )
+                            }
                         }
                     }
 

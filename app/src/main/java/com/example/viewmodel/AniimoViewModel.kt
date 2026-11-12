@@ -90,8 +90,11 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
     val currentUserEmail: StateFlow<String?> = authEmailFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), try { Firebase.auth.currentUser?.email } catch (_: Exception) { null })
 
-    val isAdminUser: StateFlow<Boolean> = authEmailFlow.map { email ->
-        !email.isNullOrBlank() && email.equals(ADMIN_EMAIL, ignoreCase = true)
+    val isAdminUser: StateFlow<Boolean> = combine(
+        authEmailFlow,
+        _adminOverrideEnabled
+    ) { email, overrideEnabled ->
+        overrideEnabled || (!email.isNullOrBlank() && email.equals(ADMIN_EMAIL, ignoreCase = true))
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -1751,6 +1754,12 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
             } catch (_: Exception) {}
             _userMessage.value = UiMessage("Admin: Lifted timeout/ban for '${ban.targetAuthorName}'.")
         }
+    }
+
+    fun toggleAdminModeOverride(enabled: Boolean) {
+        _adminOverrideEnabled.value = enabled
+        val status = if (enabled) "Admin Moderator Controls ENABLED (Override On)" else "Admin Moderator override disabled"
+        _userMessage.value = UiMessage(status)
     }
 
     fun adminPublishLiveAppConfig(
