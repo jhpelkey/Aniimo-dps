@@ -116,6 +116,21 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp when action was issued" }
       },
       "required": ["targetIdentifier", "targetAuthorName", "actionType", "reason", "expiresAtMillis", "issuedByEmail", "createdAt"]
+    },
+    "AppRemoteConfig": {
+      "title": "AppRemoteConfig",
+      "description": "Over-the-air live configuration, global announcement banner, remote data reset epoch, and GitHub Release metadata.",
+      "type": "object",
+      "properties": {
+        "latestVersionName": { "type": "string", "description": "Latest published app version e.g. 1.1" },
+        "githubRepoSlug": { "type": "string", "description": "GitHub repository slug owner/repo" },
+        "directApkUrl": { "type": "string", "description": "Direct download URL to latest GitHub release APK" },
+        "liveAnnouncement": { "type": "string", "description": "Global announcement banner displayed live in the app without requiring an APK update" },
+        "remoteResetEpoch": { "type": "integer", "description": "Incrementing counter that triggers a live over-the-air clear of pre-seeded data on connected clients" },
+        "updatedByEmail": { "type": "string", "description": "Admin email who published the live config" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of update" }
+      },
+      "required": ["latestVersionName", "githubRepoSlug", "directApkUrl", "liveAnnouncement", "remoteResetEpoch", "updatedByEmail", "updatedAt"]
     }
   },
   "firestore": {
@@ -146,6 +161,10 @@
     "/moderation_bans/{banId}": {
       "schema": { "$ref": "#/entities/ModerationBan" },
       "description": "Admin moderation timeouts and permanent bans"
+    },
+    "/app_config/{configId}": {
+      "schema": { "$ref": "#/entities/AppRemoteConfig" },
+      "description": "Live over-the-air app configuration and GitHub release update feed"
     }
   }
 }

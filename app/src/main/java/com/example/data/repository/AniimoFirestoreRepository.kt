@@ -2,6 +2,7 @@ package com.example.data.repository
 
 import android.content.Context
 import com.example.R
+import com.example.data.model.FirestoreAppConfig
 import com.example.data.model.FirestoreDiscussionPost
 import com.example.data.model.FirestoreLeaderboardEntry
 import com.example.data.model.FirestoreLivePatchNote
@@ -402,6 +403,44 @@ class AniimoFirestoreRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.DELETE, docRef.path)
+            Result.failure(e)
+        }
+    }
+
+    // ==========================================
+    // 6. OVER-THE-AIR LIVE APP CONFIG & GITHUB RELEASE FEED
+    // ==========================================
+    fun observeAppConfig(): Flow<FirestoreAppConfig?> {
+        return db.collection("app_config").document("live_release")
+            .snapshots()
+            .map { snapshot ->
+                if (snapshot.exists()) {
+                    snapshot.toObject(FirestoreAppConfig::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                } else {
+                    null
+                }
+            }
+            .catch { emit(null) }
+    }
+
+    suspend fun publishAppConfig(config: FirestoreAppConfig): Result<Unit> {
+        val docRef = db.collection("app_config").document("live_release")
+        return try {
+            val payload = mapOf(
+                "latestVersionName" to config.latestVersionName,
+                "githubRepoSlug" to config.githubRepoSlug,
+                "directApkUrl" to config.directApkUrl,
+                "liveAnnouncement" to config.liveAnnouncement,
+                "remoteResetEpoch" to config.remoteResetEpoch,
+                "updatedByEmail" to config.updatedByEmail,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            docRef.set(payload).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docRef.path)
             Result.failure(e)
         }
     }

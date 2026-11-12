@@ -226,6 +226,7 @@ fun AniimoMainScaffold(
     val isAdminUser by viewModel.isAdminUser.collectAsStateWithLifecycle()
     val currentUserEmail by viewModel.currentUserEmail.collectAsStateWithLifecycle()
     val activeModerationBans by viewModel.activeModerationBans.collectAsStateWithLifecycle()
+    val liveAppConfig by viewModel.liveAppConfig.collectAsStateWithLifecycle()
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -590,7 +591,17 @@ fun AniimoMainScaffold(
                         onIssueTimeoutOrBan = { username, actionType, reason ->
                             viewModel.adminIssueTimeoutOrBan(username, actionType, reason)
                         },
-                        onRevokeBan = { ban -> viewModel.adminRevokeBan(ban) }
+                        onRevokeBan = { ban -> viewModel.adminRevokeBan(ban) },
+                        liveAppConfig = liveAppConfig,
+                        onPublishLiveAppConfig = { latestVer, repoSlug, apkUrl, announcement, triggerClean ->
+                            viewModel.adminPublishLiveAppConfig(
+                                latestVersionName = latestVer,
+                                githubRepoSlug = repoSlug,
+                                directApkUrl = apkUrl,
+                                liveAnnouncement = announcement,
+                                triggerRemoteDataClean = triggerClean
+                            )
+                        }
                     )
                 }
             }

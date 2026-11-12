@@ -101,6 +101,9 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
     )
 
     val activeModerationBans: StateFlow<List<com.example.data.model.FirestoreModerationBan>>
+    private val _localAppConfig = MutableStateFlow<com.example.data.model.FirestoreAppConfig?>(null)
+    val liveAppConfig: StateFlow<com.example.data.model.FirestoreAppConfig>
+    private var lastAppliedResetEpoch: Int = 0
 
     // Live Patch Balances & Releases State
     val cloudPatchNotes: StateFlow<List<com.example.data.model.FirestoreLivePatchNote>>
@@ -123,6 +126,17 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
             .flatMapLatest { firestoreRepository.observePatchNotes() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+        liveAppConfig = combine(
+            authUidFlow.flatMapLatest { firestoreRepository.observeAppConfig() },
+            _localAppConfig
+        ) { cloudConfig, localConfig ->
+            localConfig ?: cloudConfig ?: com.example.data.model.FirestoreAppConfig()
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            com.example.data.model.FirestoreAppConfig()
+        )
+
         activeModerationBans = combine(
             authUidFlow.flatMapLatest { firestoreRepository.observeModerationBans() },
             _localModerationBans
@@ -135,6 +149,18 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             repository.seedDatabaseIfEmpty()
+        }
+
+        // Reactively apply Over-The-Air remote reset epoch when pushed by Admin
+        viewModelScope.launch {
+            liveAppConfig.collect { config ->
+                if (config.remoteResetEpoch > lastAppliedResetEpoch && lastAppliedResetEpoch != 0) {
+                    lastAppliedResetEpoch = config.remoteResetEpoch
+                    repository.clearAllCommunityPostsAndVotes()
+                } else if (lastAppliedResetEpoch == 0) {
+                    lastAppliedResetEpoch = config.remoteResetEpoch
+                }
+            }
         }
 
         // Reactively apply balance updates as new patches are synced in Firestore
@@ -1734,6 +1760,50 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
                 }
             } catch (_: Exception) {}
             _userMessage.value = UiMessage("Admin: Lifted timeout/ban for '${ban.targetAuthorName}'.")
+        }
+    }
+
+    fun adminPublishLiveAppConfig(
+        latestVersionName: String,
+        githubRepoSlug: String,
+        directApkUrl: String,
+        liveAnnouncement: String,
+        triggerRemoteDataClean: Boolean = false
+    ) {
+        val current = liveAppConfig.value
+        val nextEpoch = if (triggerRemoteDataClean) current.remoteResetEpoch + 1 else current.remoteResetEpoch
+        val cleanSlug = githubRepoSlug.trim().removePrefix("https://github.com/").removeSuffix("/")
+        val resolvedApkUrl = directApkUrl.trim().ifBlank {
+            if (cleanSlug.contains("/")) {
+                "https://github.com/$cleanSlug/releases/latest/download/Aniimo-DPS-v1.0.apk"
+            } else {
+                ""
+            }
+        }
+        val updated = com.example.data.model.FirestoreAppConfig(
+            id = "live_release",
+            latestVersionName = latestVersionName.trim().ifBlank { "1.0" },
+            githubRepoSlug = cleanSlug,
+            directApkUrl = resolvedApkUrl,
+            liveAnnouncement = liveAnnouncement.trim(),
+            remoteResetEpoch = nextEpoch,
+            updatedByEmail = ADMIN_EMAIL
+        )
+        _localAppConfig.value = updated
+        viewModelScope.launch {
+            if (triggerRemoteDataClean) {
+                repository.clearAllCommunityPostsAndVotes()
+            }
+            try {
+                firestoreRepository.publishAppConfig(updated)
+            } catch (_: Exception) {}
+            _userMessage.value = UiMessage(
+                if (triggerRemoteDataClean) {
+                    "Admin: Pushed Over-The-Air clean & live update to all connected apps!"
+                } else {
+                    "Admin: Published Over-The-Air live app config (v${updated.latestVersionName})!"
+                }
+            )
         }
     }
 }

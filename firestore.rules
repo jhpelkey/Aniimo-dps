@@ -251,22 +251,19 @@ service cloud.firestore {
       allow get: if isSignedIn();
       allow list: if isSignedIn();
 
-      allow create: if isSignedIn() &&
+      allow create: if isAdmin() &&
                        isValidId(patchId) &&
-                       incoming().syncedByUid == request.auth.uid &&
                        incoming().keys().hasAll(['version', 'title', 'summary', 'skillChangesJson', 'statChangesJson', 'newAniimoJson', 'syncedByUid', 'createdAt']) &&
                        incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
                        isValidPatchNote(incoming());
 
-      allow update: if isSignedIn() &&
+      allow update: if isAdmin() &&
                        isValidId(patchId) &&
-                       (existing().syncedByUid == request.auth.uid || isAdmin()) &&
-                       incoming().syncedByUid == existing().syncedByUid &&
                        incoming().createdAt == existing().createdAt &&
                        isValidPatchNote(incoming()) &&
                        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'summary', 'releaseDate', 'sourceUrl', 'skillChangesJson', 'statChangesJson', 'newAniimoJson']);
 
-      allow delete: if isSignedIn() && isValidId(patchId) && (existing().syncedByUid == request.auth.uid || isAdmin());
+      allow delete: if isAdmin() && isValidId(patchId);
     }
 
     // 5. ADMIN MODERATION TIMEOUTS & BANS COLLECTION
@@ -297,6 +294,30 @@ service cloud.firestore {
                        incoming().diff(existing()).affectedKeys().hasOnly(['actionType', 'reason', 'expiresAtMillis', 'issuedByEmail']);
 
       allow delete: if isAdmin() && isValidId(banId);
+    }
+
+    // 6. OVER-THE-AIR LIVE APP CONFIG & GITHUB RELEASE UPDATE FEED
+    function isValidAppConfig(data) {
+      return data.latestVersionName is string && data.latestVersionName.size() > 0 && data.latestVersionName.size() <= 32 &&
+             data.githubRepoSlug is string && data.githubRepoSlug.size() <= 200 &&
+             data.directApkUrl is string && data.directApkUrl.size() <= 1000 &&
+             data.liveAnnouncement is string && data.liveAnnouncement.size() <= 1000 &&
+             data.remoteResetEpoch is int && data.remoteResetEpoch >= 0 &&
+             data.updatedByEmail is string && data.updatedByEmail.size() > 0 && data.updatedByEmail.size() <= 128;
+    }
+
+    match /app_config/{configId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+
+      allow create, update: if isAdmin() &&
+                               isValidId(configId) &&
+                               incoming().keys().hasAll(['latestVersionName', 'githubRepoSlug', 'directApkUrl', 'liveAnnouncement', 'remoteResetEpoch', 'updatedByEmail', 'updatedAt']) &&
+                               incoming().keys().hasOnly(['latestVersionName', 'githubRepoSlug', 'directApkUrl', 'liveAnnouncement', 'remoteResetEpoch', 'updatedByEmail', 'updatedAt']) &&
+                               incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                               isValidAppConfig(incoming());
+
+      allow delete: if isAdmin() && isValidId(configId);
     }
   }
 }

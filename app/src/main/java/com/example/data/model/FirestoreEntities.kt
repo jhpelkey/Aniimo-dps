@@ -125,3 +125,15 @@ data class FirestoreModerationBan(
         get() = actionType == "PERMABAN" || expiresAtMillis == 0L || expiresAtMillis > System.currentTimeMillis()
 }
 
+@IgnoreExtraProperties
+data class FirestoreAppConfig(
+    @DocumentId val id: String = "live_release",
+    val latestVersionName: String = "1.0",
+    val githubRepoSlug: String = "",
+    val directApkUrl: String = "",
+    val liveAnnouncement: String = "",
+    val remoteResetEpoch: Int = 1,
+    val updatedByEmail: String = "",
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+

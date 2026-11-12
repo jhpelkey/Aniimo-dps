@@ -64,6 +64,8 @@ import androidx.compose.material.icons.filled.Verified
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import android.net.Uri
+import com.example.data.model.FirestoreAppConfig
 import com.example.data.model.FirestoreLivePatchNote
 import com.example.data.model.FirestoreModerationBan
 import com.example.data.model.SkillBalanceChange
@@ -139,6 +141,8 @@ fun SettingsScreen(
     onToggleAdminOverride: ((Boolean) -> Unit)? = null,
     onIssueTimeoutOrBan: ((String, String, String) -> Unit)? = null,
     onRevokeBan: ((FirestoreModerationBan) -> Unit)? = null,
+    liveAppConfig: FirestoreAppConfig = FirestoreAppConfig(),
+    onPublishLiveAppConfig: ((String, String, String, String, Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -271,6 +275,8 @@ fun SettingsScreen(
                     onToggleAdminOverride = onToggleAdminOverride,
                     onIssueTimeoutOrBan = onIssueTimeoutOrBan,
                     onRevokeBan = onRevokeBan,
+                    liveAppConfig = liveAppConfig,
+                    onPublishLiveAppConfig = onPublishLiveAppConfig,
                     onShowMessage = onShowMessage
                 )
             }
@@ -708,6 +714,8 @@ fun CloudSyncStatusContent(
     onToggleAdminOverride: ((Boolean) -> Unit)? = null,
     onIssueTimeoutOrBan: ((String, String, String) -> Unit)? = null,
     onRevokeBan: ((FirestoreModerationBan) -> Unit)? = null,
+    liveAppConfig: FirestoreAppConfig = FirestoreAppConfig(),
+    onPublishLiveAppConfig: ((String, String, String, String, Boolean) -> Unit)? = null,
     onShowMessage: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -715,6 +723,9 @@ fun CloudSyncStatusContent(
     val publicInviteUrl = "https://ais-pre-pmpdvh6afb4hvhij3bcahx-905521185616.us-east1.run.app"
     var targetUsernameInput by remember { mutableStateOf("") }
     var moderationReasonInput by remember { mutableStateOf("") }
+    var githubSlugInput by remember(liveAppConfig.githubRepoSlug) { mutableStateOf(liveAppConfig.githubRepoSlug) }
+    var latestVersionInput by remember(liveAppConfig.latestVersionName) { mutableStateOf(liveAppConfig.latestVersionName) }
+    var liveAnnouncementInput by remember(liveAppConfig.liveAnnouncement) { mutableStateOf(liveAppConfig.liveAnnouncement) }
 
     LazyColumn(
         modifier = Modifier
@@ -940,6 +951,193 @@ fun CloudSyncStatusContent(
                                             color = Color(0xFF0F172A)
                                         )
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Over-The-Air (OTA) Live Updates & GitHub Auto-Update Card
+        item {
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF131D33)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.65f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("ota_github_update_card")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "Over-The-Air (OTA) Live Sync & GitHub Auto-Updater",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFF38BDF8)
+                    )
+                    Text(
+                        text = "Installed Version: v1.0 • Cloud Live Version: v${liveAppConfig.latestVersionName} • Sync Epoch #${liveAppConfig.remoteResetEpoch}",
+                        fontSize = 11.sp,
+                        color = Color(0xFF34D399)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "• Live Cloud Updates (No APK Redownload Needed): New 4-Aniimo teams, speedruns, discussion posts, admin bans/deletions, live announcements, and Patch Notes balance changes update automatically over the air via Firebase Cloud Firestore.\n• GitHub APK Auto-Updates: For full UI updates, link your GitHub repo below or tap 'Add to Obtainium' so Android tracks your GitHub Releases and updates in 1 tap.",
+                        fontSize = 11.sp,
+                        color = Color(0xFFCBD5E1),
+                        lineHeight = 16.sp
+                    )
+
+                    if (isAdmin && onPublishLiveAppConfig != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = {
+                                onPublishLiveAppConfig(
+                                    latestVersionInput,
+                                    githubSlugInput,
+                                    liveAppConfig.directApkUrl,
+                                    liveAnnouncementInput,
+                                    true
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("admin_push_ota_clean_btn")
+                        ) {
+                            Text(
+                                text = "Push Over-The-Air Clean of Pre-Posted Teams to All Installed Apps",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF0F172A)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = githubSlugInput,
+                            onValueChange = { githubSlugInput = it },
+                            label = { Text("GitHub Repo (owner/repo) for Direct Updates", fontSize = 11.sp) },
+                            placeholder = { Text("e.g. yourusername/aniimo-dps", fontSize = 11.sp) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFF38BDF8),
+                                unfocusedBorderColor = Color(0xFF334155),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = latestVersionInput,
+                                onValueChange = { latestVersionInput = it },
+                                label = { Text("Latest Version", fontSize = 11.sp) },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color(0xFF38BDF8),
+                                    unfocusedBorderColor = Color(0xFF334155),
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                ),
+                                modifier = Modifier.weight(0.35f)
+                            )
+
+                            OutlinedTextField(
+                                value = liveAnnouncementInput,
+                                onValueChange = { liveAnnouncementInput = it },
+                                label = { Text("Live App Banner / Announcement", fontSize = 11.sp) },
+                                placeholder = { Text("e.g. New Season 1 Leaderboard is live!", fontSize = 11.sp) },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color(0xFF38BDF8),
+                                    unfocusedBorderColor = Color(0xFF334155),
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                ),
+                                modifier = Modifier.weight(0.65f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Button(
+                            onClick = {
+                                onPublishLiveAppConfig(
+                                    latestVersionInput,
+                                    githubSlugInput,
+                                    liveAppConfig.directApkUrl,
+                                    liveAnnouncementInput,
+                                    false
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Publish Live OTA Config & GitHub Release Info",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A)
+                            )
+                        }
+                    }
+
+                    if (liveAppConfig.githubRepoSlug.isNotBlank() || liveAppConfig.directApkUrl.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        val repoUrl = if (liveAppConfig.githubRepoSlug.isNotBlank()) {
+                            "https://github.com/${liveAppConfig.githubRepoSlug}/releases/latest"
+                        } else {
+                            liveAppConfig.directApkUrl
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    val targetUrl = liveAppConfig.directApkUrl.ifBlank { repoUrl }
+                                    try {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)))
+                                    } catch (_: Exception) {
+                                        onShowMessage("Could not open browser for $targetUrl")
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Update from GitHub", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                            }
+
+                            if (liveAppConfig.githubRepoSlug.isNotBlank()) {
+                                OutlinedButton(
+                                    onClick = {
+                                        val obtainiumUri = "obtainium://add/https://github.com/${liveAppConfig.githubRepoSlug}"
+                                        try {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(obtainiumUri)))
+                                        } catch (_: Exception) {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/ImranR98/Obtainium/releases/latest")))
+                                        }
+                                    },
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF34D399)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Auto-Update (Obtainium)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
                                 }
                             }
                         }
