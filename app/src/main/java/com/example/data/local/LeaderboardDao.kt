@@ -33,6 +33,10 @@ interface LeaderboardDao {
     @Query("SELECT COUNT(*) FROM leaderboard_entries")
     suspend fun getCount(): Int
 
+    @Query("DELETE FROM leaderboard_entries WHERE id = :id")
+    suspend fun deleteEntryById(id: Long)
+
     @Query("DELETE FROM leaderboard_entries")
     suspend fun clearAll()
 }
+

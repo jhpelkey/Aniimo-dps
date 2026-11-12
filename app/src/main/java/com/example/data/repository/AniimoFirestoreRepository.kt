@@ -5,6 +5,7 @@ import com.example.R
 import com.example.data.model.FirestoreDiscussionPost
 import com.example.data.model.FirestoreLeaderboardEntry
 import com.example.data.model.FirestoreLivePatchNote
+import com.example.data.model.FirestoreModerationBan
 import com.example.data.model.FirestorePostComment
 import com.example.data.model.FirestoreSubmissionVote
 import com.example.data.model.FirestoreTeam
@@ -328,4 +329,81 @@ class AniimoFirestoreRepository(
             Result.failure(e)
         }
     }
+
+    // ==========================================
+    // 5. ADMIN MODERATION (DELETE POSTS/RUNS & TIMEOUTS/BANS)
+    // ==========================================
+    suspend fun deleteDiscussionPost(postId: String): Result<Unit> {
+        val docRef = db.collection("posts").document(postId)
+        return try {
+            docRef.delete().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docRef.path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteLeaderboardEntry(entryId: String): Result<Unit> {
+        val docRef = db.collection("leaderboard_entries").document(entryId)
+        return try {
+            docRef.delete().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docRef.path)
+            Result.failure(e)
+        }
+    }
+
+    fun observeModerationBans(): Flow<List<FirestoreModerationBan>> {
+        return db.collection("moderation_bans")
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObjects(FirestoreModerationBan::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+            }
+            .catch { emit(emptyList()) }
+    }
+
+    suspend fun issueModerationBan(ban: FirestoreModerationBan): Result<String> {
+        val safeDocId = ban.id.ifBlank {
+            ban.targetIdentifier.lowercase().replace(Regex("[^a-z0-9_-]"), "_").take(64).ifBlank { UUID.randomUUID().toString() }
+        }
+        val docRef = db.collection("moderation_bans").document(safeDocId)
+        return try {
+            val payload = mapOf(
+                "targetIdentifier" to ban.targetIdentifier,
+                "targetAuthorName" to ban.targetAuthorName,
+                "actionType" to ban.actionType,
+                "reason" to ban.reason,
+                "expiresAtMillis" to ban.expiresAtMillis,
+                "issuedByEmail" to ban.issuedByEmail,
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+            docRef.set(payload).await()
+            Result.success(safeDocId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docRef.path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun revokeModerationBan(banId: String): Result<Unit> {
+        val docRef = db.collection("moderation_bans").document(banId)
+        return try {
+            docRef.delete().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docRef.path)
+            Result.failure(e)
+        }
+    }
 }
+

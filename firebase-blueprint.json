@@ -101,6 +101,21 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of patch sync" }
       },
       "required": ["version", "title", "summary", "skillChangesJson", "statChangesJson", "newAniimoJson", "syncedByUid", "createdAt"]
+    },
+    "ModerationBan": {
+      "title": "ModerationBan",
+      "description": "Admin moderation timeout or permanent ban record issued against an unruly user or author.",
+      "type": "object",
+      "properties": {
+        "targetIdentifier": { "type": "string", "description": "Target user UID or normalized username" },
+        "targetAuthorName": { "type": "string", "description": "Display name of the timed-out or banned user" },
+        "actionType": { "type": "string", "description": "TIMEOUT_1H, TIMEOUT_24H, TIMEOUT_7D, or PERMABAN" },
+        "reason": { "type": "string", "description": "Moderation reason shown to user" },
+        "expiresAtMillis": { "type": "integer", "description": "Epoch milliseconds when timeout expires, or 0 for permanent ban" },
+        "issuedByEmail": { "type": "string", "description": "Admin email who issued the moderation action" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp when action was issued" }
+      },
+      "required": ["targetIdentifier", "targetAuthorName", "actionType", "reason", "expiresAtMillis", "issuedByEmail", "createdAt"]
     }
   },
   "firestore": {
@@ -127,6 +142,10 @@
     "/patches/{patchId}": {
       "schema": { "$ref": "#/entities/LivePatchNote" },
       "description": "Live Aniimo patch notes that auto-configure skill multipliers and new Aniimo"
+    },
+    "/moderation_bans/{banId}": {
+      "schema": { "$ref": "#/entities/ModerationBan" },
+      "description": "Admin moderation timeouts and permanent bans"
     }
   }
 }

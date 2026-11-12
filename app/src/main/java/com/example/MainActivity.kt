@@ -223,6 +223,9 @@ fun AniimoMainScaffold(
     val activeSkillChanges by viewModel.activeSkillChanges.collectAsStateWithLifecycle()
     val activeStatChanges by viewModel.activeStatChanges.collectAsStateWithLifecycle()
     val isParsingWithAi by viewModel.isParsingWithAi.collectAsStateWithLifecycle()
+    val isAdminUser by viewModel.isAdminUser.collectAsStateWithLifecycle()
+    val currentUserEmail by viewModel.currentUserEmail.collectAsStateWithLifecycle()
+    val activeModerationBans by viewModel.activeModerationBans.collectAsStateWithLifecycle()
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -320,6 +323,13 @@ fun AniimoMainScaffold(
                         },
                         onShowMessage = { msg ->
                             viewModel.showNotice(msg)
+                        },
+                        isAdmin = isAdminUser,
+                        onAdminDeleteTeam = { team ->
+                            viewModel.adminDeleteTopRatedTeam(team)
+                        },
+                        onAdminTimeoutOrBanAuthor = { authorName, actionType ->
+                            viewModel.adminIssueTimeoutOrBan(authorName, actionType, "Inappropriate team build submission")
                         }
                     )
                 }
@@ -506,6 +516,13 @@ fun AniimoMainScaffold(
                         onNavigateToAniimoDetail = { aniimo ->
                             viewModel.selectAniimo(aniimo)
                             currentScreen = Screen.ANIIMO_DETAIL
+                        },
+                        isAdmin = isAdminUser,
+                        onAdminDeletePost = { post ->
+                            viewModel.adminDeleteDiscussionPost(post)
+                        },
+                        onAdminTimeoutOrBanAuthor = { authorName, actionType ->
+                            viewModel.adminIssueTimeoutOrBan(authorName, actionType, "Unwanted / rule-breaking discussion post")
                         }
                     )
                 }
@@ -522,7 +539,14 @@ fun AniimoMainScaffold(
                         onSubmitClick = { viewModel.openSubmitRunDialog() },
                         showOnlyLegitEntries = showOnlyLegitEntries,
                         onToggleShowOnlyLegit = { viewModel.setShowOnlyLegitEntries(it) },
-                        onVoteLegit = { entry, isLegit -> viewModel.voteLeaderboardLegitimacy(entry, isLegit) }
+                        onVoteLegit = { entry, isLegit -> viewModel.voteLeaderboardLegitimacy(entry, isLegit) },
+                        isAdmin = isAdminUser,
+                        onAdminDeleteEntry = { entry ->
+                            viewModel.adminDeleteLeaderboardEntry(entry)
+                        },
+                        onAdminTimeoutOrBanRunner = { runnerName, actionType ->
+                            viewModel.adminIssueTimeoutOrBan(runnerName, actionType, "Invalid / fake speedrun submission")
+                        }
                     )
                 }
                 Screen.SAVED_BUILDS -> {
@@ -558,7 +582,15 @@ fun AniimoMainScaffold(
                         isParsingWithAi = isParsingWithAi,
                         onSyncOfficialNotes = { url -> viewModel.syncOfficialPatchNotesUrl(url) },
                         onParseRawText = { text -> viewModel.parseRawPatchNotesText(text) },
-                        onShowMessage = { msg -> viewModel.showNotice(msg) }
+                        onShowMessage = { msg -> viewModel.showNotice(msg) },
+                        isAdmin = isAdminUser,
+                        currentUserEmail = currentUserEmail,
+                        activeBans = activeModerationBans,
+                        onToggleAdminOverride = { enabled -> viewModel.toggleAdminModeOverride(enabled) },
+                        onIssueTimeoutOrBan = { username, actionType, reason ->
+                            viewModel.adminIssueTimeoutOrBan(username, actionType, reason)
+                        },
+                        onRevokeBan = { ban -> viewModel.adminRevokeBan(ban) }
                     )
                 }
             }

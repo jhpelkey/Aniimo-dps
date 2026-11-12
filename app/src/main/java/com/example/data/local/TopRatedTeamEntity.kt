@@ -164,4 +164,11 @@ interface TopRatedTeamDao {
 
     @Query("SELECT COUNT(*) FROM top_rated_teams")
     suspend fun getCount(): Int
+
+    @Query("DELETE FROM top_rated_teams WHERE id = :id")
+    suspend fun deleteTeamById(id: String)
+
+    @Query("DELETE FROM top_rated_teams")
+    suspend fun clearAll()
 }
+

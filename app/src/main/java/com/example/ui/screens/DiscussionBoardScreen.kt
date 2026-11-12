@@ -107,6 +107,9 @@ fun DiscussionBoardScreen(
     onToggleUpvote: (Int) -> Unit,
     onSubmitReply: (postId: Int, authorName: String, replyContent: String) -> Unit,
     onNavigateToAniimoDetail: ((Aniimo) -> Unit)? = null,
+    isAdmin: Boolean = false,
+    onAdminDeletePost: ((DiscussionPost) -> Unit)? = null,
+    onAdminTimeoutOrBanAuthor: ((String, String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var isNewPostDialogOpen by remember { mutableStateOf(false) }
@@ -473,7 +476,10 @@ fun DiscussionBoardScreen(
                             if (matchedAniimo != null && onNavigateToAniimoDetail != null) {
                                 onNavigateToAniimoDetail(matchedAniimo)
                             }
-                        }
+                        },
+                        isAdmin = isAdmin,
+                        onAdminDeletePost = { onAdminDeletePost?.invoke(post) },
+                        onAdminTimeoutOrBanAuthor = onAdminTimeoutOrBanAuthor
                     )
                 }
             }
@@ -506,6 +512,9 @@ fun DiscussionPostCard(
     onToggleUpvote: () -> Unit,
     onSubmitReply: (authorName: String, replyContent: String) -> Unit,
     onClickAniimo: (() -> Unit)? = null,
+    isAdmin: Boolean = false,
+    onAdminDeletePost: (() -> Unit)? = null,
+    onAdminTimeoutOrBanAuthor: ((String, String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showReplies by remember { mutableStateOf(false) }
@@ -968,6 +977,70 @@ fun DiscussionPostCard(
                                 contentDescription = "Send Reply",
                                 tint = Color(0xFF0F172A)
                             )
+                        }
+                    }
+                }
+            }
+
+            if (isAdmin) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF3B0764).copy(alpha = 0.45f))
+                        .border(1.dp, Color(0xFFF43F5E).copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .testTag("admin_mod_bar_post_${post.id}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "ADMIN MOD:",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFFFDA4AF)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFEF4444))
+                                .clickable { onAdminDeletePost?.invoke() }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("admin_delete_post_${post.id}")
+                        ) {
+                            Text("Remove Post", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFF59E0B))
+                                .clickable { onAdminTimeoutOrBanAuthor?.invoke(post.authorName, "TIMEOUT_1H") }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("admin_timeout_1h_post_${post.id}")
+                        ) {
+                            Text("Timeout 1h", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFD97706))
+                                .clickable { onAdminTimeoutOrBanAuthor?.invoke(post.authorName, "TIMEOUT_24H") }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("admin_timeout_24h_post_${post.id}")
+                        ) {
+                            Text("Timeout 24h", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF991B1B))
+                                .clickable { onAdminTimeoutOrBanAuthor?.invoke(post.authorName, "PERMANENT_BAN") }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("admin_ban_post_${post.id}")
+                        ) {
+                            Text("Ban User", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
                 }

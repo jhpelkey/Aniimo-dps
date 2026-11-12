@@ -109,3 +109,19 @@ data class StatBalanceChange(
     val deltaPercent: Double,
     val notes: String
 )
+
+@IgnoreExtraProperties
+data class FirestoreModerationBan(
+    @DocumentId val id: String = "",
+    val targetIdentifier: String = "",
+    val targetAuthorName: String = "",
+    val actionType: String = "TIMEOUT_24H", // "TIMEOUT_1H", "TIMEOUT_24H", "TIMEOUT_7D", "PERMABAN"
+    val reason: String = "",
+    val expiresAtMillis: Long = 0L, // 0L = permanent ban, >0L = epoch millis when timeout ends
+    val issuedByEmail: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null
+) {
+    val isCurrentlyActive: Boolean
+        get() = actionType == "PERMABAN" || expiresAtMillis == 0L || expiresAtMillis > System.currentTimeMillis()
+}
+

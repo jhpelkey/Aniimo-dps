@@ -88,6 +88,9 @@ fun TopTeamsScreen(
     onPublishTeam: ((TopRatedTeam) -> Unit)? = null,
     onSubmitSpeedrunForTeam: ((TopRatedTeam) -> Unit)? = null,
     onShowMessage: ((String) -> Unit)? = null,
+    isAdmin: Boolean = false,
+    onAdminDeleteTeam: ((TopRatedTeam) -> Unit)? = null,
+    onAdminTimeoutOrBanAuthor: ((String, String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var isSubmitBuildDialogOpen by remember { mutableStateOf(false) }
@@ -346,16 +349,16 @@ fun TopTeamsScreen(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "No 4-Aniimo Teams Found",
+                            text = "No 4-Aniimo Teams Posted Yet",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Try clearing the search query or changing the mode filter.",
+                            text = "Tap 'Submit / Share Build' above to post the first community 4-Aniimo squad!",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFF64748B)
+                            color = Color(0xFF94A3B8)
                         )
                     }
                 }
@@ -374,7 +377,10 @@ fun TopTeamsScreen(
                             onToggleUpvote = { onToggleUpvote(team.id, team.hasUserUpvoted) },
                             onSimulateTeam = onSimulateTeam,
                             onSubmitSpeedrunForTeam = onSubmitSpeedrunForTeam,
-                            onShowMessage = onShowMessage
+                            onShowMessage = onShowMessage,
+                            isAdmin = isAdmin,
+                            onAdminDeleteTeam = { onAdminDeleteTeam?.invoke(team) },
+                            onAdminTimeoutOrBanAuthor = onAdminTimeoutOrBanAuthor
                         )
                     }
                 }
@@ -424,6 +430,9 @@ fun TopRatedTeamCard(
     onSimulateTeam: (Aniimo, String?) -> Unit,
     onSubmitSpeedrunForTeam: ((TopRatedTeam) -> Unit)? = null,
     onShowMessage: ((String) -> Unit)? = null,
+    isAdmin: Boolean = false,
+    onAdminDeleteTeam: (() -> Unit)? = null,
+    onAdminTimeoutOrBanAuthor: ((String, String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val clipboardManager = LocalClipboardManager.current
@@ -1047,6 +1056,60 @@ fun TopRatedTeamCard(
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF34D399)
                 )
+            }
+
+            if (isAdmin) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF3B0764).copy(alpha = 0.45f))
+                        .border(1.dp, Color(0xFFF43F5E).copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .testTag("admin_mod_bar_team_${team.id}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "ADMIN MOD:",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFFFDA4AF)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFEF4444))
+                                .clickable { onAdminDeleteTeam?.invoke() }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("admin_delete_team_${team.id}")
+                        ) {
+                            Text("Remove Team", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFF59E0B))
+                                .clickable { onAdminTimeoutOrBanAuthor?.invoke(team.author, "TIMEOUT_24H") }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("admin_timeout_team_${team.id}")
+                        ) {
+                            Text("Timeout 24h", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF991B1B))
+                                .clickable { onAdminTimeoutOrBanAuthor?.invoke(team.author, "PERMANENT_BAN") }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("admin_ban_team_${team.id}")
+                        ) {
+                            Text("Ban Author", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                }
             }
         }
     }

@@ -65,8 +65,14 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import com.example.data.model.FirestoreLivePatchNote
+import com.example.data.model.FirestoreModerationBan
 import com.example.data.model.SkillBalanceChange
 import com.example.data.model.StatBalanceChange
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.runtime.mutableStateOf
 
 data class ThemeColorPreset(
     val name: String,
@@ -127,10 +133,16 @@ fun SettingsScreen(
     onSyncOfficialNotes: (String) -> Unit,
     onParseRawText: (String) -> Unit,
     onShowMessage: (String) -> Unit,
+    isAdmin: Boolean = false,
+    currentUserEmail: String? = null,
+    activeBans: List<FirestoreModerationBan> = emptyList(),
+    onToggleAdminOverride: ((Boolean) -> Unit)? = null,
+    onIssueTimeoutOrBan: ((String, String, String) -> Unit)? = null,
+    onRevokeBan: ((FirestoreModerationBan) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabTitles = listOf("Theme & Font", "Patch Notes", "Cloud & Sync")
+    val tabTitles = listOf("Theme & Font", "Patch Notes", "Cloud & Admin")
 
     Column(
         modifier = modifier
@@ -168,7 +180,7 @@ fun SettingsScreen(
                         color = currentTextColor
                     )
                     Text(
-                        text = "Customize colors & fonts, read live patch updates, and manage cloud data",
+                        text = "Customize colors & fonts, read live patch updates, and manage cloud & admin tools",
                         fontSize = 11.sp,
                         color = currentTextColor.copy(alpha = 0.7f)
                     )
@@ -253,6 +265,12 @@ fun SettingsScreen(
             2 -> {
                 CloudSyncStatusContent(
                     currentTextColor = currentTextColor,
+                    isAdmin = isAdmin,
+                    currentUserEmail = currentUserEmail,
+                    activeBans = activeBans,
+                    onToggleAdminOverride = onToggleAdminOverride,
+                    onIssueTimeoutOrBan = onIssueTimeoutOrBan,
+                    onRevokeBan = onRevokeBan,
                     onShowMessage = onShowMessage
                 )
             }
@@ -684,11 +702,19 @@ fun AppearanceSettingsContent(
 @Composable
 fun CloudSyncStatusContent(
     currentTextColor: Color,
+    isAdmin: Boolean = false,
+    currentUserEmail: String? = null,
+    activeBans: List<FirestoreModerationBan> = emptyList(),
+    onToggleAdminOverride: ((Boolean) -> Unit)? = null,
+    onIssueTimeoutOrBan: ((String, String, String) -> Unit)? = null,
+    onRevokeBan: ((FirestoreModerationBan) -> Unit)? = null,
     onShowMessage: (String) -> Unit
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val publicInviteUrl = "https://ais-pre-pmpdvh6afb4hvhij3bcahx-905521185616.us-east1.run.app"
+    var targetUsernameInput by remember { mutableStateOf("") }
+    var moderationReasonInput by remember { mutableStateOf("") }
 
     LazyColumn(
         modifier = Modifier
@@ -697,6 +723,231 @@ fun CloudSyncStatusContent(
         contentPadding = PaddingValues(vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // Admin Moderation Console Card (for Owner jhpelkey@gmail.com)
+        item {
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A102B)),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFF43F5E).copy(alpha = 0.75f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("admin_moderation_console_card")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Admin Moderation Console",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFFFDA4AF)
+                            )
+                            Text(
+                                text = "Owner Admin: jhpelkey@gmail.com • Signed in: ${currentUserEmail ?: "Guest/Testing"}",
+                                fontSize = 11.sp,
+                                color = if (isAdmin) Color(0xFF34D399) else Color(0xFF94A3B8)
+                            )
+                        }
+
+                        if (onToggleAdminOverride != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (isAdmin) "ADMIN ON" else "ADMIN OFF",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = if (isAdmin) Color(0xFF34D399) else Color(0xFF94A3B8)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Switch(
+                                    checked = isAdmin,
+                                    onCheckedChange = { onToggleAdminOverride(it) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color(0xFF0F172A),
+                                        checkedTrackColor = Color(0xFFF43F5E)
+                                    ),
+                                    modifier = Modifier.testTag("admin_mode_toggle_switch")
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = if (isAdmin) {
+                            "Admin Mode is ACTIVE. You can remove unwanted posts, runs, or 4-Aniimo teams directly on the Board, Leaderboard, and Teams tabs, or issue timeouts and bans below."
+                        } else {
+                            "Sign in with jhpelkey@gmail.com (or toggle Admin Mode above while testing) to unlock Remove Post/Run/Team buttons and issue user timeouts or bans."
+                        },
+                        fontSize = 11.sp,
+                        color = Color(0xFFE2E8F0),
+                        lineHeight = 16.sp
+                    )
+
+                    if (isAdmin && onIssueTimeoutOrBan != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OutlinedTextField(
+                            value = targetUsernameInput,
+                            onValueChange = { targetUsernameInput = it },
+                            label = { Text("Username or Author to Timeout / Ban", fontSize = 11.sp) },
+                            placeholder = { Text("e.g. Spammer123", fontSize = 11.sp) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFFF43F5E),
+                                unfocusedBorderColor = Color(0xFF334155),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("admin_target_username_input")
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = moderationReasonInput,
+                            onValueChange = { moderationReasonInput = it },
+                            label = { Text("Moderation Reason (optional)", fontSize = 11.sp) },
+                            placeholder = { Text("e.g. Fake speedrun clip / spam post", fontSize = 11.sp) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFFF43F5E),
+                                unfocusedBorderColor = Color(0xFF334155),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("admin_moderation_reason_input")
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    onIssueTimeoutOrBan(targetUsernameInput, "TIMEOUT_1H", moderationReasonInput)
+                                    targetUsernameInput = ""
+                                    moderationReasonInput = ""
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1f).testTag("admin_btn_timeout_1h")
+                            ) {
+                                Text("1h Timeout", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                            }
+                            Button(
+                                onClick = {
+                                    onIssueTimeoutOrBan(targetUsernameInput, "TIMEOUT_24H", moderationReasonInput)
+                                    targetUsernameInput = ""
+                                    moderationReasonInput = ""
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1f).testTag("admin_btn_timeout_24h")
+                            ) {
+                                Text("24h Timeout", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                            Button(
+                                onClick = {
+                                    onIssueTimeoutOrBan(targetUsernameInput, "TIMEOUT_7D", moderationReasonInput)
+                                    targetUsernameInput = ""
+                                    moderationReasonInput = ""
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1f).testTag("admin_btn_timeout_7d")
+                            ) {
+                                Text("7d Timeout", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                            Button(
+                                onClick = {
+                                    onIssueTimeoutOrBan(targetUsernameInput, "PERMANENT_BAN", moderationReasonInput)
+                                    targetUsernameInput = ""
+                                    moderationReasonInput = ""
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1f).testTag("admin_btn_perm_ban")
+                            ) {
+                                Text("Perm Ban", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+
+                        if (activeBans.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "ACTIVE TIMEOUTS & BANS (${activeBans.size})",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFFFDA4AF)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            activeBans.forEach { ban ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 3.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF0F172A))
+                                        .border(1.dp, Color(0xFFF43F5E).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "${ban.targetAuthorName} • ${ban.actionType}",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                        Text(
+                                            text = ban.reason,
+                                            fontSize = 10.sp,
+                                            color = Color(0xFF94A3B8)
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFF10B981))
+                                            .clickable { onRevokeBan?.invoke(ban) }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            .testTag("admin_revoke_ban_${ban.id}")
+                                    ) {
+                                        Text(
+                                            text = "Unban / Lift",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF0F172A)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             Card(
                 shape = RoundedCornerShape(14.dp),

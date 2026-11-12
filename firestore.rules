@@ -16,6 +16,19 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // Bootstrapped Admin: jhpelkey@gmail.com (with verified email) or /admins/{uid} document
+    function isAdmin() {
+      return isSignedIn() &&
+             (
+               (request.auth.token.email == 'jhpelkey@gmail.com' && request.auth.token.email_verified == true) ||
+               exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+             );
+    }
+
+    function isUserBanned() {
+      return isSignedIn() && exists(/databases/$(database)/documents/moderation_bans/$(request.auth.uid));
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -43,10 +56,11 @@ service cloud.firestore {
     }
 
     match /teams/{teamId} {
-      allow get: if isSignedIn() && (existing().isPublic == true || existing().userId == request.auth.uid);
+      allow get: if isSignedIn() && (existing().isPublic == true || existing().userId == request.auth.uid || isAdmin());
       allow list: if isSignedIn() && (resource.data.isPublic == true || resource.data.userId == request.auth.uid);
 
       allow create: if isSignedIn() &&
+                       !isUserBanned() &&
                        isValidId(teamId) &&
                        incoming().userId == request.auth.uid &&
                        incoming().keys().hasAll(['userId', 'name', 'tag', 'memberIds', 'membersJson', 'createdAt', 'updatedAt']) &&
@@ -61,13 +75,14 @@ service cloud.firestore {
                        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
                        isValidTeam(incoming()) &&
                        (
+                         isAdmin() ||
                          // Owner updating team content
                          (existing().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'tag', 'authorName', 'description', 'memberIds', 'membersJson', 'isPublic', 'updatedAt', 'upvotes'])) ||
                          // Community upvoting a public team
                          (existing().isPublic == true && incoming().diff(existing()).affectedKeys().hasOnly(['upvotes', 'updatedAt']))
                        );
 
-      allow delete: if isSignedIn() && isValidId(teamId) && existing().userId == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(teamId) && (existing().userId == request.auth.uid || isAdmin());
     }
 
     // 2. DISCUSSION POSTS COLLECTION
@@ -88,6 +103,7 @@ service cloud.firestore {
       allow list: if isSignedIn();
 
       allow create: if isSignedIn() &&
+                       !isUserBanned() &&
                        isValidId(postId) &&
                        incoming().authorUid == request.auth.uid &&
                        incoming().keys().hasAll(['authorUid', 'authorName', 'title', 'body', 'tag', 'upvotes', 'commentsCount', 'createdAt', 'updatedAt']) &&
@@ -102,13 +118,14 @@ service cloud.firestore {
                        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
                        isValidDiscussionPost(incoming()) &&
                        (
+                         isAdmin() ||
                          // Author updating content
                          (existing().authorUid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'body', 'tag', 'aniimoId', 'aniimoName', 'updatedAt', 'upvotes', 'commentsCount'])) ||
                          // Community voting or incrementing comment count
                          (incoming().diff(existing()).affectedKeys().hasOnly(['upvotes', 'commentsCount', 'updatedAt']))
                        );
 
-      allow delete: if isSignedIn() && isValidId(postId) && existing().authorUid == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(postId) && (existing().authorUid == request.auth.uid || isAdmin());
 
       // Subcollection: comments
       function isValidComment(data) {
@@ -122,6 +139,7 @@ service cloud.firestore {
         allow list: if isSignedIn();
 
         allow create: if isSignedIn() &&
+                         !isUserBanned() &&
                          isValidId(commentId) &&
                          incoming().authorUid == request.auth.uid &&
                          incoming().keys().hasAll(['authorUid', 'authorName', 'content', 'createdAt']) &&
@@ -136,7 +154,7 @@ service cloud.firestore {
                          isValidComment(incoming()) &&
                          incoming().diff(existing()).affectedKeys().hasOnly(['content']);
 
-        allow delete: if isSignedIn() && isValidId(commentId) && existing().authorUid == request.auth.uid;
+        allow delete: if isSignedIn() && isValidId(commentId) && (existing().authorUid == request.auth.uid || isAdmin());
       }
     }
 
@@ -162,6 +180,7 @@ service cloud.firestore {
       allow list: if isSignedIn();
 
       allow create: if isSignedIn() &&
+                       !isUserBanned() &&
                        isValidId(entryId) &&
                        incoming().submitterUid == request.auth.uid &&
                        incoming().keys().hasAll(['submitterUid', 'runnerName', 'dungeonName', 'teamName', 'aniimoIds', 'clearTimeSeconds', 'clearTimeFormatted', 'videoUrl', 'legitVotes', 'notLegitVotes', 'isVerified', 'createdAt', 'updatedAt']) &&
@@ -176,13 +195,14 @@ service cloud.firestore {
                        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
                        isValidLeaderboardEntry(incoming()) &&
                        (
+                         isAdmin() ||
                          // Submitter updating details
                          (existing().submitterUid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['runnerName', 'teamName', 'notes', 'videoUrl', 'updatedAt'])) ||
                          // Community voting on legitimacy (adjusting votes and verified status)
                          (incoming().diff(existing()).affectedKeys().hasOnly(['legitVotes', 'notLegitVotes', 'isVerified', 'updatedAt']))
                        );
 
-      allow delete: if isSignedIn() && isValidId(entryId) && existing().submitterUid == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(entryId) && (existing().submitterUid == request.auth.uid || isAdmin());
 
       // Subcollection: votes
       function isValidVote(data) {
@@ -210,7 +230,7 @@ service cloud.firestore {
                          isValidVote(incoming()) &&
                          incoming().diff(existing()).affectedKeys().hasOnly(['isLegit', 'reason']);
 
-        allow delete: if isSignedIn() && voterUid == request.auth.uid && existing().voterUid == request.auth.uid;
+        allow delete: if isSignedIn() && (voterUid == request.auth.uid || isAdmin());
       }
     }
 
@@ -240,13 +260,43 @@ service cloud.firestore {
 
       allow update: if isSignedIn() &&
                        isValidId(patchId) &&
-                       existing().syncedByUid == request.auth.uid &&
+                       (existing().syncedByUid == request.auth.uid || isAdmin()) &&
                        incoming().syncedByUid == existing().syncedByUid &&
                        incoming().createdAt == existing().createdAt &&
                        isValidPatchNote(incoming()) &&
                        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'summary', 'releaseDate', 'sourceUrl', 'skillChangesJson', 'statChangesJson', 'newAniimoJson']);
 
-      allow delete: if isSignedIn() && isValidId(patchId) && existing().syncedByUid == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(patchId) && (existing().syncedByUid == request.auth.uid || isAdmin());
+    }
+
+    // 5. ADMIN MODERATION TIMEOUTS & BANS COLLECTION
+    function isValidModerationBan(data) {
+      return data.targetIdentifier is string && data.targetIdentifier.size() > 0 && data.targetIdentifier.size() <= 128 &&
+             data.targetAuthorName is string && data.targetAuthorName.size() > 0 && data.targetAuthorName.size() <= 100 &&
+             data.actionType is string && data.actionType in ['TIMEOUT_1H', 'TIMEOUT_24H', 'TIMEOUT_7D', 'PERMABAN'] &&
+             data.reason is string && data.reason.size() <= 500 &&
+             data.expiresAtMillis is int && data.expiresAtMillis >= 0 &&
+             data.issuedByEmail is string && data.issuedByEmail.size() > 0 && data.issuedByEmail.size() <= 128;
+    }
+
+    match /moderation_bans/{banId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+
+      allow create: if isAdmin() &&
+                       isValidId(banId) &&
+                       incoming().keys().hasAll(['targetIdentifier', 'targetAuthorName', 'actionType', 'reason', 'expiresAtMillis', 'issuedByEmail', 'createdAt']) &&
+                       incoming().keys().hasOnly(['targetIdentifier', 'targetAuthorName', 'actionType', 'reason', 'expiresAtMillis', 'issuedByEmail', 'createdAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       isValidModerationBan(incoming());
+
+      allow update: if isAdmin() &&
+                       isValidId(banId) &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidModerationBan(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['actionType', 'reason', 'expiresAtMillis', 'issuedByEmail']);
+
+      allow delete: if isAdmin() && isValidId(banId);
     }
   }
 }

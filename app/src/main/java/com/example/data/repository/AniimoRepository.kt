@@ -53,21 +53,14 @@ class AniimoRepository(private val database: AniimoDatabase) {
     private val initialLeaderboardEntries: List<LeaderboardEntryEntity> = emptyList()
 
     suspend fun seedDatabaseIfEmpty() {
-        if (topRatedTeamDao.getCount() == 0) {
-            topRatedTeamDao.insertAll(
-                initialTopRatedTeams.map {
-                    com.example.data.local.TopRatedTeamEntity.fromDomain(
-                        it.copy(upvotes = 0, hasUserUpvoted = false)
-                    )
-                }
-            )
-        }
+        // Starts completely fresh with 0 auto-generated Top Rated Teams, Leaderboard runs, Discussion posts, or Tier votes
     }
 
     suspend fun clearAllCommunityPostsAndVotes() {
         leaderboardDao.clearAll()
         discussionDao.clearAll()
         communityTierVoteDao.clearAll()
+        topRatedTeamDao.clearAll()
     }
 
     private fun createInitialCommunityVote(aniimo: Aniimo): CommunityTierVoteEntity {
@@ -190,6 +183,18 @@ class AniimoRepository(private val database: AniimoDatabase) {
 
     suspend fun saveTopRatedTeam(team: com.example.data.model.TopRatedTeam) {
         topRatedTeamDao.insertTeam(com.example.data.local.TopRatedTeamEntity.fromDomain(team.copy(isUserCreated = true)))
+    }
+
+    suspend fun deleteTopRatedTeam(teamId: String) {
+        topRatedTeamDao.deleteTeamById(teamId)
+    }
+
+    suspend fun deleteLeaderboardEntry(id: Long) {
+        leaderboardDao.deleteEntryById(id)
+    }
+
+    suspend fun deleteDiscussionPost(postId: Int) {
+        discussionDao.deletePostById(postId)
     }
 
     fun getAniimoById(id: String): Aniimo? {

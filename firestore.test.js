@@ -214,3 +214,82 @@ test("Authenticated user: can publish synced patch notes", async () => {
     })
   );
 });
+
+// --- ADMIN MODERATION & TIMEOUT/BAN TESTS ---
+
+test("Bootstrapped Admin (jhpelkey@gmail.com with email_verified: true) can delete unwanted posts and issue timeouts/bans", async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const now = new Date();
+    await context.firestore().collection("posts").doc("spam_post").set({
+      authorUid: BOB_UID,
+      authorName: "SpammerBob",
+      title: "Unwanted Spam Post",
+      body: "Spam content",
+      tag: "General",
+      upvotes: 0,
+      commentsCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  const adminDb = testEnv.authenticatedContext("admin_uid_1", {
+    email: "jhpelkey@gmail.com",
+    email_verified: true,
+  }).firestore();
+
+  // Admin can delete unwanted post created by another user
+  await assertSucceeds(adminDb.collection("posts").doc("spam_post").delete());
+
+  // Admin can issue a 24h timeout or permanent ban
+  const now = new Date();
+  await assertSucceeds(
+    adminDb.collection("moderation_bans").doc(BOB_UID).set({
+      targetIdentifier: BOB_UID,
+      targetAuthorName: "SpammerBob",
+      actionType: "TIMEOUT_24H",
+      reason: "Posting unwanted spam on Discussion Board",
+      expiresAtMillis: Date.now() + 86400000,
+      issuedByEmail: "jhpelkey@gmail.com",
+      createdAt: now,
+    })
+  );
+});
+
+test("Email spoofing defense: unverified jhpelkey@gmail.com or non-admin cannot delete others' posts or issue bans", async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const now = new Date();
+    await context.firestore().collection("posts").doc("legit_post").set({
+      authorUid: BOB_UID,
+      authorName: "Bob",
+      title: "Legit Post",
+      body: "Normal content",
+      tag: "Builds",
+      upvotes: 1,
+      commentsCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  const spoofedAdminDb = testEnv.authenticatedContext("spoof_uid", {
+    email: "jhpelkey@gmail.com",
+    email_verified: false,
+  }).firestore();
+
+  await assertFails(spoofedAdminDb.collection("posts").doc("legit_post").delete());
+
+  const now = new Date();
+  await assertFails(
+    spoofedAdminDb.collection("moderation_bans").doc(BOB_UID).set({
+      targetIdentifier: BOB_UID,
+      targetAuthorName: "Bob",
+      actionType: "PERMABAN",
+      reason: "Spoof attempt",
+      expiresAtMillis: 0,
+      issuedByEmail: "jhpelkey@gmail.com",
+      createdAt: now,
+    })
+  );
+});
+

@@ -313,59 +313,66 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `validate Top Rated Teams have 4 Aniimo, 1 Held Item each, and Awakening stats HP ATK BREAK PDEF MDEF REGEN`() = runBlocking {
+    fun `validate Top Rated Teams start fresh with 0 pre-posted teams and support custom 4-Aniimo team creation, upvoting, and admin removal`() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = AniimoDatabase.getDatabase(context)
         val repository = AniimoRepository(db)
         repository.seedDatabaseIfEmpty()
+        repository.clearAllCommunityPostsAndVotes()
 
         val teamDao = db.topRatedTeamDao()
-        assertTrue("Top Rated Teams should be seeded", teamDao.getCount() >= 10)
+        assertEquals("Top Rated Teams must start fresh with 0 auto-generated teams", 0, teamDao.getCount())
 
-        val allTeams = repository.getAllTopRatedTeams().first()
-        assertTrue("Seeded teams must not be empty", allTeams.isNotEmpty())
+        val initialTeams = repository.getAllTopRatedTeams().first()
+        assertTrue("Initial Top Rated Teams list must be empty", initialTeams.isEmpty())
 
-        // Validate 5 Core Game Modes are present
-        val modesPresent = allTeams.map { it.mode }.toSet()
-        assertTrue("Must have DPS Boss teams", modesPresent.contains(com.example.data.model.TeamMode.DPS))
-        assertTrue("Must have Campaign teams", modesPresent.contains(com.example.data.model.TeamMode.CAMPAIGN))
-        assertTrue("Must have Egg Heist PvE teams", modesPresent.contains(com.example.data.model.TeamMode.EGG_HEIST_PVE))
-        assertTrue("Must have PvP Arena teams", modesPresent.contains(com.example.data.model.TeamMode.PVP_TEAM))
-        assertTrue("Must have 1v1 Solo Duel teams", modesPresent.contains(com.example.data.model.TeamMode.PVP_SOLO))
+        // Publish a user-submitted 4-Aniimo team with 1 Held Item each and 6 Awakening stats
+        val userTeam = com.example.data.model.TopRatedTeam(
+            id = "custom_team_fulmintis_1",
+            title = "Fulmintis Hyper Stagger Squad",
+            mode = com.example.data.model.TeamMode.DPS,
+            primaryAniimoId = "fulmintis",
+            primaryAniimoName = "Fulmintis",
+            members = listOf(
+                com.example.data.model.TeamMemberBuild("fulmintis", "Fulmintis", "Main DPS", Element.LIGHTNING, "Ferocious Fang (+15)", "+24% Crit DMG", "ATK (6) > BREAK (6)"),
+                com.example.data.model.TeamMemberBuild("dazmand", "Dazmand", "Synergist", Element.LIGHT, "Capacitous Battery (+15)", "+18% Energy Regen", "REGEN (6) > HP (6)"),
+                com.example.data.model.TeamMemberBuild("grizbo", "Grizbo", "Breaker", Element.EARTH, "Bailite Crest (+15)", "+30% Stagger Break", "BREAK (6) > PDEF (6)"),
+                com.example.data.model.TeamMemberBuild("stellarys", "Stellarys", "Burst Support", Element.DARK, "Supernova Shard (+15)", "+22% Ultimate DMG", "ATK (6) > MDEF (6)")
+            ),
+            capabilities = listOf(
+                com.example.data.model.CapabilityPerk("HP", "Tier 1", "+12% Max HP", 4),
+                com.example.data.model.CapabilityPerk("ATK", "Tier 3", "+25% Attack", 6),
+                com.example.data.model.CapabilityPerk("BREAK", "Tier 3", "+25% Break Efficiency", 6),
+                com.example.data.model.CapabilityPerk("PDEF", "Tier 1", "+8% PDEF", 2),
+                com.example.data.model.CapabilityPerk("MDEF", "Tier 1", "+8% MDEF", 2),
+                com.example.data.model.CapabilityPerk("REGEN", "Tier 2", "+15% Energy Regen", 4)
+            ),
+            pointInvestmentOrder = listOf(
+                com.example.data.model.PointInvestmentStep("Pts 1-6", "ATK", "Maximize primary strike scaling", "Max First")
+            ),
+            strategyGuide = "Open with Grizbo Break, swap to Fulmintis during 5s stagger window.",
+            estimatedDpsOrWinRate = "158,400 DPS",
+            upvotes = 1,
+            hasUserUpvoted = false,
+            author = "CommunityTester"
+        )
+        repository.saveTopRatedTeam(userTeam)
 
-        // Validate EVERY team has 4 Aniimo, 1 Held Item each, and Awakening stats (HP, ATK, BREAK, PDEF, MDEF, REGEN)
-        val expectedAwakeningStats = setOf("HP", "ATK", "BREAK", "PDEF", "MDEF", "REGEN")
-        allTeams.forEach { team ->
-            assertEquals("Team '${team.title}' must consist of exactly 4 Aniimo", 4, team.members.size)
-            team.members.forEach { member ->
-                assertTrue("Member ${member.aniimoName} must equip 1 Held Item", member.heldItem.isNotBlank())
-                assertTrue("Member ${member.aniimoName} must specify Awakening priority order", member.awakeningOrder.isNotBlank())
-            }
-            val teamStatNames = team.capabilities.map { it.name.uppercase() }.toSet()
-            assertEquals(
-                "Team '${team.title}' capabilities must cover the 6 Awakening stats (HP, ATK, BREAK, PDEF, MDEF, REGEN)",
-                expectedAwakeningStats,
-                teamStatNames
-            )
-            assertTrue("Team '${team.title}' must specify Awakening point investment order", team.pointInvestmentOrder.isNotEmpty())
-        }
-
-        // Validate searching specifically for Fulmintis
         val fulmintisTeams = repository.getTopRatedTeamsForAniimo("fulmintis").first()
-        assertTrue("Fulmintis should have top rated teams", fulmintisTeams.isNotEmpty())
-        assertEquals(5, fulmintisTeams.size) // Covers all 5 game modes!
-
-        val dpsTeam = fulmintisTeams.find { it.mode == com.example.data.model.TeamMode.DPS }
-        assertNotNull("Fulmintis DPS team must exist", dpsTeam)
-        assertEquals(4, dpsTeam!!.members.size)
+        assertEquals(1, fulmintisTeams.size)
+        val dpsTeam = fulmintisTeams.first()
+        assertEquals(4, dpsTeam.members.size)
 
         // Validate upvoting a team
-        val initialUpvotes = dpsTeam.upvotes
         repository.toggleTeamUpvote(dpsTeam.id, false)
         val updatedTeamEntity = teamDao.getTeamById(dpsTeam.id)
         assertNotNull(updatedTeamEntity)
-        assertEquals(initialUpvotes + 1, updatedTeamEntity!!.upvotes)
+        assertEquals(2, updatedTeamEntity!!.upvotes)
         assertTrue(updatedTeamEntity.hasUserUpvoted)
+
+        // Validate Admin removal of a team
+        repository.deleteTopRatedTeam(dpsTeam.id)
+        assertEquals(0, teamDao.getCount())
     }
 
     @Test

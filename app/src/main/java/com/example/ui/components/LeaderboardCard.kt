@@ -47,6 +47,9 @@ fun LeaderboardCard(
     onWatchProof: (LeaderboardEntry) -> Unit,
     onUpvote: (LeaderboardEntry) -> Unit,
     onVoteLegit: ((LeaderboardEntry, Boolean) -> Unit)? = null,
+    isAdmin: Boolean = false,
+    onAdminDeleteEntry: ((LeaderboardEntry) -> Unit)? = null,
+    onAdminTimeoutOrBanRunner: ((String, String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val isLegitGreen = entry.isLegitCommunityVerified // legitVotes > notLegitVotes
@@ -479,6 +482,60 @@ fun LeaderboardCard(
                         fontWeight = FontWeight.Bold,
                         color = if (entry.hasUserUpvoted) Color(0xFF38BDF8) else Color(0xFF94A3B8)
                     )
+                }
+            }
+
+            if (isAdmin) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF3B0764).copy(alpha = 0.45f))
+                        .border(1.dp, Color(0xFFF43F5E).copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .testTag("admin_mod_bar_run_${entry.id}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "ADMIN MOD:",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFFFDA4AF)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFEF4444))
+                                .clickable { onAdminDeleteEntry?.invoke(entry) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("admin_delete_run_${entry.id}")
+                        ) {
+                            Text("Remove Run", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFF59E0B))
+                                .clickable { onAdminTimeoutOrBanRunner?.invoke(entry.runnerName, "TIMEOUT_24H") }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("admin_timeout_runner_${entry.id}")
+                        ) {
+                            Text("Timeout 24h", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF991B1B))
+                                .clickable { onAdminTimeoutOrBanRunner?.invoke(entry.runnerName, "PERMANENT_BAN") }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("admin_ban_runner_${entry.id}")
+                        ) {
+                            Text("Ban Runner", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
                 }
             }
         }

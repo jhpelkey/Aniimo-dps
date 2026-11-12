@@ -79,6 +79,9 @@ fun LeaderboardScreen(
     showOnlyLegitEntries: Boolean = false,
     onToggleShowOnlyLegit: (Boolean) -> Unit = {},
     onVoteLegit: ((LeaderboardEntry, Boolean) -> Unit)? = null,
+    isAdmin: Boolean = false,
+    onAdminDeleteEntry: ((LeaderboardEntry) -> Unit)? = null,
+    onAdminTimeoutOrBanRunner: ((String, String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -532,7 +535,10 @@ fun LeaderboardScreen(
                             entry = entry,
                             onWatchProof = onWatchProof,
                             onUpvote = onUpvote,
-                            onVoteLegit = onVoteLegit
+                            onVoteLegit = onVoteLegit,
+                            isAdmin = isAdmin,
+                            onAdminDeleteEntry = onAdminDeleteEntry,
+                            onAdminTimeoutOrBanRunner = onAdminTimeoutOrBanRunner
                         )
                     }
                 }

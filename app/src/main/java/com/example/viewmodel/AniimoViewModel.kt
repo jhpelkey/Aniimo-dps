@@ -44,8 +44,17 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
     private val firestoreRepository: com.example.data.repository.AniimoFirestoreRepository
     private val patchNotesService: com.example.data.service.AniimoPatchNotesService
 
+    companion object {
+        const val ADMIN_EMAIL = "jhpelkey@gmail.com"
+    }
+
     private val cloudEntryDocIds = ConcurrentHashMap<Long, String>()
     private val cloudPostDocIds = ConcurrentHashMap<Int, String>()
+    private val _locallyDeletedTeamIds = MutableStateFlow<Set<String>>(emptySet())
+    private val _locallyDeletedEntryIds = MutableStateFlow<Set<Long>>(emptySet())
+    private val _locallyDeletedPostIds = MutableStateFlow<Set<Int>>(emptySet())
+    private val _localModerationBans = MutableStateFlow<List<com.example.data.model.FirestoreModerationBan>>(emptyList())
+    private val _adminOverrideEnabled = MutableStateFlow(false)
 
     private val authUidFlow: Flow<String?> = callbackFlow {
         val auth = try { Firebase.auth } catch (_: Exception) { null }
@@ -61,6 +70,37 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
         auth.addAuthStateListener(listener)
         awaitClose { auth.removeAuthStateListener(listener) }
     }.distinctUntilChanged().catch { emit(null) }
+
+    private val authEmailFlow: Flow<String?> = callbackFlow {
+        val auth = try { Firebase.auth } catch (_: Exception) { null }
+        if (auth == null) {
+            trySend(null)
+            close()
+            return@callbackFlow
+        }
+        trySend(auth.currentUser?.email)
+        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            trySend(firebaseAuth.currentUser?.email)
+        }
+        auth.addAuthStateListener(listener)
+        awaitClose { auth.removeAuthStateListener(listener) }
+    }.distinctUntilChanged().catch { emit(null) }
+
+    val currentUserEmail: StateFlow<String?> = authEmailFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), try { Firebase.auth.currentUser?.email } catch (_: Exception) { null })
+
+    val isAdminUser: StateFlow<Boolean> = combine(
+        authEmailFlow,
+        _adminOverrideEnabled
+    ) { email, overrideEnabled ->
+        overrideEnabled || email.equals(ADMIN_EMAIL, ignoreCase = true)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        try { Firebase.auth.currentUser?.email.equals(ADMIN_EMAIL, ignoreCase = true) } catch (_: Exception) { false }
+    )
+
+    val activeModerationBans: StateFlow<List<com.example.data.model.FirestoreModerationBan>>
 
     // Live Patch Balances & Releases State
     val cloudPatchNotes: StateFlow<List<com.example.data.model.FirestoreLivePatchNote>>
@@ -82,6 +122,16 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
         cloudPatchNotes = authUidFlow
             .flatMapLatest { firestoreRepository.observePatchNotes() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        activeModerationBans = combine(
+            authUidFlow.flatMapLatest { firestoreRepository.observeModerationBans() },
+            _localModerationBans
+        ) { cloudBans, localBans ->
+            val combined = (cloudBans + localBans)
+                .filter { it.isCurrentlyActive }
+                .distinctBy { it.targetIdentifier.lowercase() }
+            combined
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
         viewModelScope.launch {
             repository.seedDatabaseIfEmpty()
@@ -202,9 +252,17 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
 
     val allTopRatedTeams: StateFlow<List<com.example.data.model.TopRatedTeam>> = combine(
         repository.getAllTopRatedTeams(),
-        cloudTeamsFlow
-    ) { localTeams, cloudTeams ->
+        cloudTeamsFlow,
+        _locallyDeletedTeamIds,
+        activeModerationBans
+    ) { localTeams, cloudTeams, deletedIds, bans ->
+        val bannedNames = bans.map { it.targetAuthorName.lowercase() }.toSet()
+        val bannedIds = bans.map { it.targetIdentifier.lowercase() }.toSet()
         val mappedCloud = cloudTeams.mapNotNull { fsTeam ->
+            if (deletedIds.contains(fsTeam.id)) return@mapNotNull null
+            if (bannedIds.contains(fsTeam.userId.lowercase()) || bannedNames.contains(fsTeam.authorName.lowercase())) {
+                return@mapNotNull null
+            }
             val resolvedIds = fsTeam.memberIds.ifEmpty { listOf("fulmintis", "dazmand", "bailite", "stellarys") }
             val resolvedAniimos = (0..3).map { idx ->
                 val targetId = resolvedIds.getOrNull(idx) ?: ""
@@ -253,7 +311,9 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
                 isUserCreated = true
             )
         }
-        val merged = localTeams.toMutableList()
+        val merged = localTeams
+            .filter { !deletedIds.contains(it.id) && !bannedNames.contains(it.author.lowercase()) }
+            .toMutableList()
         for (cloudTeam in mappedCloud) {
             val duplicate = merged.any {
                 it.id == cloudTeam.id ||
@@ -408,6 +468,10 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun submitCustomTeam(team: com.example.data.model.TopRatedTeam) {
+        findActiveBanForUser(team.author)?.let { ban ->
+            _userMessage.value = UiMessage(formatBanMessage(ban), isError = true)
+            return
+        }
         viewModelScope.launch {
             repository.saveTopRatedTeam(team)
             try {
@@ -509,10 +573,18 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
 
     private val rawEntries: Flow<List<LeaderboardEntry>> = combine(
         repository.getAllLeaderboardEntries(),
-        cloudLeaderboardFlow
-    ) { localEntries, cloudEntries ->
-        val mappedCloud = cloudEntries.map { fsEntry ->
+        cloudLeaderboardFlow,
+        _locallyDeletedEntryIds,
+        activeModerationBans
+    ) { localEntries, cloudEntries, deletedIds, bans ->
+        val bannedNames = bans.map { it.targetAuthorName.lowercase() }.toSet()
+        val bannedIds = bans.map { it.targetIdentifier.lowercase() }.toSet()
+        val mappedCloud = cloudEntries.mapNotNull { fsEntry ->
             val syntheticId = ((fsEntry.id.hashCode().toLong() and 0x7FFFFFFFL) + 100_000L)
+            if (deletedIds.contains(syntheticId)) return@mapNotNull null
+            if (bannedIds.contains(fsEntry.submitterUid.lowercase()) || bannedNames.contains(fsEntry.runnerName.lowercase())) {
+                return@mapNotNull null
+            }
             if (fsEntry.id.isNotBlank()) {
                 cloudEntryDocIds[syntheticId] = fsEntry.id
             }
@@ -581,25 +653,27 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
 
-        val merged = localEntries.map { local ->
-            val matchingCloud = mappedCloud.find { cloud ->
-                cloud.runnerName.equals(local.runnerName, ignoreCase = true) &&
-                    cloud.clearTimeDisplay == local.clearTimeDisplay &&
-                    cloud.bossId == local.bossId
-            }
-            if (matchingCloud != null) {
-                cloudEntryDocIds[local.id]?.let { } ?: run {
-                    cloudEntryDocIds[matchingCloud.id]?.let { docId -> cloudEntryDocIds[local.id] = docId }
+        val merged = localEntries
+            .filter { !deletedIds.contains(it.id) && !bannedNames.contains(it.runnerName.lowercase()) }
+            .map { local ->
+                val matchingCloud = mappedCloud.find { cloud ->
+                    cloud.runnerName.equals(local.runnerName, ignoreCase = true) &&
+                        cloud.clearTimeDisplay == local.clearTimeDisplay &&
+                        cloud.bossId == local.bossId
                 }
-                local.copy(
-                    legitVotes = maxOf(local.legitVotes, matchingCloud.legitVotes),
-                    notLegitVotes = maxOf(local.notLegitVotes, matchingCloud.notLegitVotes),
-                    isVerified = maxOf(local.legitVotes, matchingCloud.legitVotes) > maxOf(local.notLegitVotes, matchingCloud.notLegitVotes)
-                )
-            } else {
-                local
-            }
-        }.toMutableList()
+                if (matchingCloud != null) {
+                    cloudEntryDocIds[local.id]?.let { } ?: run {
+                        cloudEntryDocIds[matchingCloud.id]?.let { docId -> cloudEntryDocIds[local.id] = docId }
+                    }
+                    local.copy(
+                        legitVotes = maxOf(local.legitVotes, matchingCloud.legitVotes),
+                        notLegitVotes = maxOf(local.notLegitVotes, matchingCloud.notLegitVotes),
+                        isVerified = maxOf(local.legitVotes, matchingCloud.legitVotes) > maxOf(local.notLegitVotes, matchingCloud.notLegitVotes)
+                    )
+                } else {
+                    local
+                }
+            }.toMutableList()
 
         for (cloud in mappedCloud) {
             val exists = merged.any { local ->
@@ -1012,6 +1086,10 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
             _userMessage.value = UiMessage("Please enter runner name and video proof URL.", isError = true)
             return false
         }
+        findActiveBanForUser(runnerName.trim())?.let { ban ->
+            _userMessage.value = UiMessage(formatBanMessage(ban), isError = true)
+            return false
+        }
 
         val totalMillis = (minutes * 60L * 1000L) + (seconds * 1000L) + (millis * 10L)
         if (totalMillis <= 0) {
@@ -1278,15 +1356,23 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
 
     val allDiscussionPosts: StateFlow<List<com.example.data.model.DiscussionPost>> = combine(
         repository.getAllDiscussionPosts(),
-        cloudDiscussionFlow
-    ) { localPosts, cloudPosts ->
+        cloudDiscussionFlow,
+        _locallyDeletedPostIds,
+        activeModerationBans
+    ) { localPosts, cloudPosts, deletedIds, bans ->
+        val bannedNames = bans.map { it.targetAuthorName.lowercase() }.toSet()
+        val bannedIds = bans.map { it.targetIdentifier.lowercase() }.toSet()
         val heldRegex = Regex("""\[Held Item:\s*([^\]]*)\]""")
         val awakeRegex = Regex("""\[Awakening:\s*([^\]]*)\]""")
         val mediaUrlRegex = Regex("""\[MediaUrl:\s*([^\]]*)\]""")
         val mediaTypeRegex = Regex("""\[MediaType:\s*([^\]]*)\]""")
 
-        val mappedCloud = cloudPosts.map { fsPost ->
+        val mappedCloud = cloudPosts.mapNotNull { fsPost ->
             val syntheticId = ((fsPost.id.hashCode() and 0x7FFFFFFF) % 900_000) + 100_000
+            if (deletedIds.contains(syntheticId)) return@mapNotNull null
+            if (bannedIds.contains(fsPost.authorUid.lowercase()) || bannedNames.contains(fsPost.authorName.lowercase())) {
+                return@mapNotNull null
+            }
             if (fsPost.id.isNotBlank()) {
                 cloudPostDocIds[syntheticId] = fsPost.id
             }
@@ -1335,18 +1421,20 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
 
-        val merged = localPosts.map { local ->
-            val matchingCloud = mappedCloud.find { cloud ->
-                cloud.title.equals(local.title, ignoreCase = true) &&
-                    cloud.authorName.equals(local.authorName, ignoreCase = true)
-            }
-            if (matchingCloud != null) {
-                cloudPostDocIds[matchingCloud.id]?.let { docId -> cloudPostDocIds[local.id] = docId }
-                local.copy(upvotes = maxOf(local.upvotes, matchingCloud.upvotes))
-            } else {
-                local
-            }
-        }.toMutableList()
+        val merged = localPosts
+            .filter { !deletedIds.contains(it.id) && !bannedNames.contains(it.authorName.lowercase()) }
+            .map { local ->
+                val matchingCloud = mappedCloud.find { cloud ->
+                    cloud.title.equals(local.title, ignoreCase = true) &&
+                        cloud.authorName.equals(local.authorName, ignoreCase = true)
+                }
+                if (matchingCloud != null) {
+                    cloudPostDocIds[matchingCloud.id]?.let { docId -> cloudPostDocIds[local.id] = docId }
+                    local.copy(upvotes = maxOf(local.upvotes, matchingCloud.upvotes))
+                } else {
+                    local
+                }
+            }.toMutableList()
 
         for (cloud in mappedCloud) {
             val exists = merged.any { local ->
@@ -1407,6 +1495,10 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
     ) {
         if (title.isBlank() || content.isBlank()) {
             _userMessage.value = UiMessage("Please enter a title and idea description.", isError = true)
+            return
+        }
+        findActiveBanForUser(authorName.trim())?.let { ban ->
+            _userMessage.value = UiMessage(formatBanMessage(ban), isError = true)
             return
         }
         val resolvedAniimoName = if (!customTopicName.isNullOrBlank()) customTopicName.trim() else aniimo.name
@@ -1493,6 +1585,10 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
             _userMessage.value = UiMessage("Please enter a reply comment.", isError = true)
             return
         }
+        findActiveBanForUser(authorName.trim())?.let { ban ->
+            _userMessage.value = UiMessage(formatBanMessage(ban), isError = true)
+            return
+        }
         viewModelScope.launch {
             repository.addDiscussionReply(postId, authorName, replyContent)
             try {
@@ -1510,6 +1606,134 @@ class AniimoViewModel(application: Application) : AndroidViewModel(application) 
                 }
             } catch (_: Exception) {}
             _userMessage.value = UiMessage("Reply added to discussion!")
+        }
+    }
+
+    // ==========================================
+    // ADMIN MODERATION & TIMEOUT / BAN ACTIONS
+    // ==========================================
+    fun toggleAdminModeOverride(enabled: Boolean) {
+        _adminOverrideEnabled.value = enabled
+        val status = if (enabled) "Admin Moderator Controls enabled ($ADMIN_EMAIL)" else "Admin Moderator override disabled"
+        _userMessage.value = UiMessage(status)
+    }
+
+    private fun findActiveBanForUser(authorName: String): com.example.data.model.FirestoreModerationBan? {
+        val currentUid = try { Firebase.auth.currentUser?.uid } catch (_: Exception) { null }
+        val normalizedAuthor = authorName.trim().lowercase()
+        return activeModerationBans.value.firstOrNull { ban ->
+            ban.isCurrentlyActive && (
+                (currentUid != null && ban.targetIdentifier.equals(currentUid, ignoreCase = true)) ||
+                (normalizedAuthor.isNotBlank() && (
+                    ban.targetAuthorName.equals(normalizedAuthor, ignoreCase = true) ||
+                    ban.targetIdentifier.equals(normalizedAuthor, ignoreCase = true)
+                ))
+            )
+        }
+    }
+
+    private fun formatBanMessage(ban: com.example.data.model.FirestoreModerationBan): String {
+        return if (ban.actionType == "PERMABAN" || ban.expiresAtMillis == 0L) {
+            "Action blocked: Account '${ban.targetAuthorName}' is permanently banned by Admin (${ban.reason})."
+        } else {
+            val remainingMins = ((ban.expiresAtMillis - System.currentTimeMillis()) / 60_000L).coerceAtLeast(1L)
+            "Action blocked: '${ban.targetAuthorName}' is on a moderation timeout for $remainingMins more min (${ban.reason})."
+        }
+    }
+
+    fun adminDeleteDiscussionPost(post: com.example.data.model.DiscussionPost) {
+        _locallyDeletedPostIds.value = _locallyDeletedPostIds.value + post.id
+        viewModelScope.launch {
+            repository.deleteDiscussionPost(post.id)
+            try {
+                cloudPostDocIds[post.id]?.let { docId ->
+                    firestoreRepository.deleteDiscussionPost(docId)
+                }
+            } catch (_: Exception) {}
+            _userMessage.value = UiMessage("Admin: Removed post '${post.title}' by ${post.authorName}.")
+        }
+    }
+
+    fun adminDeleteLeaderboardEntry(entry: LeaderboardEntry) {
+        _locallyDeletedEntryIds.value = _locallyDeletedEntryIds.value + entry.id
+        viewModelScope.launch {
+            repository.deleteLeaderboardEntry(entry.id)
+            try {
+                cloudEntryDocIds[entry.id]?.let { docId ->
+                    firestoreRepository.deleteLeaderboardEntry(docId)
+                }
+            } catch (_: Exception) {}
+            _userMessage.value = UiMessage("Admin: Removed speedrun by ${entry.runnerName} (${entry.clearTimeDisplay}).")
+        }
+    }
+
+    fun adminDeleteTopRatedTeam(team: com.example.data.model.TopRatedTeam) {
+        _locallyDeletedTeamIds.value = _locallyDeletedTeamIds.value + team.id
+        viewModelScope.launch {
+            repository.deleteTopRatedTeam(team.id)
+            try {
+                firestoreRepository.deleteTeam(team.id)
+            } catch (_: Exception) {}
+            _userMessage.value = UiMessage("Admin: Removed 4-Aniimo team '${team.title}' by ${team.author}.")
+        }
+    }
+
+    fun adminIssueTimeoutOrBan(
+        targetAuthorOrUid: String,
+        actionType: String, // "TIMEOUT_1H", "TIMEOUT_24H", "TIMEOUT_7D", "PERMABAN"
+        reason: String = "Community guidelines violation"
+    ) {
+        val cleanTarget = targetAuthorOrUid.trim()
+        if (cleanTarget.isBlank()) {
+            _userMessage.value = UiMessage("Please enter a username or UID to timeout/ban.", isError = true)
+            return
+        }
+        val now = System.currentTimeMillis()
+        val expiresAt = when (actionType) {
+            "TIMEOUT_1H" -> now + 3_600_000L
+            "TIMEOUT_24H" -> now + 86_400_000L
+            "TIMEOUT_7D" -> now + 7 * 86_400_000L
+            else -> 0L // PERMABAN
+        }
+        val safeId = cleanTarget.lowercase().replace(Regex("[^a-z0-9_-]"), "_").take(64).ifBlank { "ban_${now}" }
+        val ban = com.example.data.model.FirestoreModerationBan(
+            id = safeId,
+            targetIdentifier = cleanTarget,
+            targetAuthorName = cleanTarget,
+            actionType = actionType,
+            reason = reason.ifBlank { "Community guidelines violation" },
+            expiresAtMillis = expiresAt,
+            issuedByEmail = ADMIN_EMAIL
+        )
+        _localModerationBans.value = _localModerationBans.value.filterNot {
+            it.targetIdentifier.equals(cleanTarget, ignoreCase = true)
+        } + ban
+
+        viewModelScope.launch {
+            try {
+                firestoreRepository.issueModerationBan(ban)
+            } catch (_: Exception) {}
+            val label = when (actionType) {
+                "TIMEOUT_1H" -> "1-Hour Timeout"
+                "TIMEOUT_24H" -> "24-Hour Timeout"
+                "TIMEOUT_7D" -> "7-Day Timeout"
+                else -> "Permanent Ban"
+            }
+            _userMessage.value = UiMessage("Admin: Issued $label to '$cleanTarget' and hid their posts.")
+        }
+    }
+
+    fun adminRevokeBan(ban: com.example.data.model.FirestoreModerationBan) {
+        _localModerationBans.value = _localModerationBans.value.filterNot {
+            it.id == ban.id || it.targetIdentifier.equals(ban.targetIdentifier, ignoreCase = true)
+        }
+        viewModelScope.launch {
+            try {
+                if (ban.id.isNotBlank()) {
+                    firestoreRepository.revokeModerationBan(ban.id)
+                }
+            } catch (_: Exception) {}
+            _userMessage.value = UiMessage("Admin: Lifted timeout/ban for '${ban.targetAuthorName}'.")
         }
     }
 }
